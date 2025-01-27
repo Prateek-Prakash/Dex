@@ -17,47 +17,63 @@ struct ModelsView: View {
     var body: some View {
         NavigationStack {
             List {
-                ForEach(Array(globalVM.currentPulls).sorted { $0.key < $1.key }, id: \.key) { entry in
+                // Failed
+                ForEach(Array(globalVM.currentPulls.filter { $0.value.contains("FAILED") }).sorted { $0.key < $1.key }, id: \.key) { entry in
                     LabeledContent {
-                        if !entry.value.contains("FAILED") {
-                            ProgressView()
-                        } else {
-                            HStack {
-                                Button {
-                                    Task {
-                                        await globalVM.pullModel(entry.key)
-                                    }
-                                } label: {
-                                    Image(systemName: "arrow.clockwise")
-                                        .font(.system(size: 10))
-                                        .frame(width: 12, height: 12)
+                        HStack {
+                            Button {
+                                Task {
+                                    await globalVM.pullModel(entry.key)
                                 }
-                                .buttonStyle(.bordered)
-                                Button {
-                                    globalVM.currentPulls.removeValue(forKey: entry.key)
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 10))
-                                        .frame(width: 12, height: 12)
-                                }
-                                .buttonStyle(.bordered)
-                                .tint(Color.red)
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 10))
+                                    .frame(width: 12, height: 12)
                             }
+                            .buttonStyle(.bordered)
+                            Button {
+                                globalVM.currentPulls.removeValue(forKey: entry.key)
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 10))
+                                    .frame(width: 12, height: 12)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(Color.red)
                         }
                     } label: {
                         VStack(alignment: .leading) {
                             Text(entry.key.split(separator: ":")[0].uppercased())
                                 .font(.system(size: 12.0, weight: .bold, design: .rounded))
-                                .foregroundStyle(entry.value.contains("FAILED") ? Color.red : Color.primary)
+                                .foregroundStyle(Color.red)
                             Text(entry.key.split(separator: ":").count > 1 ? entry.key.split(separator: ":")[1].uppercased() : "LATEST")
                                 .font(.system(size: 10.0, weight: .bold, design: .rounded))
-                                .foregroundStyle(entry.value.contains("FAILED") ? Color.red.opacity(0.65) : Color.secondary)
+                                .foregroundStyle(Color.red.opacity(0.65))
                             Text(entry.value)
                                 .font(.system(size: 9.0, weight: .thin, design: .monospaced))
-                                .foregroundStyle(entry.value.contains("FAILED") ? Color.red.opacity(0.65) : Color.secondary)
+                                .foregroundStyle(Color.red.opacity(0.65))
                         }
                     }
                 }
+                // In-Progress
+                ForEach(Array(globalVM.currentPulls.filter { !$0.value.contains("FAILED") }).sorted { $0.key < $1.key }, id: \.key) { entry in
+                    LabeledContent {
+                        ProgressView()
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Text(entry.key.split(separator: ":")[0].uppercased())
+                                .font(.system(size: 12.0, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color.primary)
+                            Text(entry.key.split(separator: ":").count > 1 ? entry.key.split(separator: ":")[1].uppercased() : "LATEST")
+                                .font(.system(size: 10.0, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color.secondary)
+                            Text(entry.value)
+                                .font(.system(size: 9.0, weight: .thin, design: .monospaced))
+                                .foregroundStyle(Color.secondary)
+                        }
+                    }
+                }
+                // Completed
                 ForEach(globalVM.okModels, id: \.name) { model in
                     NavigationLink {
                         ModelDetailsView(okModel: model)
