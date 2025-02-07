@@ -7,6 +7,7 @@
 
 import OllamaKit
 import SwiftUI
+import Swollama
 
 struct ModelDetailsView: View {
     let okModel: OKModelResponse.Model

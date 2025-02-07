@@ -13,6 +13,7 @@
 		6E0915AD2D48429000D3409D /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 6E0915AB2D48429000D3409D /* README.md */; };
 		6E0915AF2D4842E700D3409D /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = 6E0915AE2D4842E700D3409D /* .gitignore */; };
 		6E8893F82D420A49000AC235 /* OllamaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6E8893F72D420A49000AC235 /* OllamaKit */; };
+		6EA4781B2D55543C006A42F8 /* Swollama in Frameworks */ = {isa = PBXBuildFile; productRef = 6EA4781A2D55543C006A42F8 /* Swollama */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -48,6 +49,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6EA4781B2D55543C006A42F8 /* Swollama in Frameworks */,
 				6E0915872D470D6B00D3409D /* MarkdownUI in Frameworks */,
 				6E8893F82D420A49000AC235 /* OllamaKit in Frameworks */,
 				6E0500842D44697B0029CD5D /* Alamofire in Frameworks */,
@@ -99,6 +101,7 @@
 				6E8893F72D420A49000AC235 /* OllamaKit */,
 				6E0500832D44697B0029CD5D /* Alamofire */,
 				6E0915862D470D6B00D3409D /* MarkdownUI */,
+				6EA4781A2D55543C006A42F8 /* Swollama */,
 			);
 			productName = Dex;
 			productReference = 6E8893E42D41E43A000AC235 /* Dex.app */;
@@ -132,6 +135,7 @@
 				6E8893F62D420A49000AC235 /* XCRemoteSwiftPackageReference "OllamaKit" */,
 				6E0500822D44697B0029CD5D /* XCRemoteSwiftPackageReference "Alamofire" */,
 				6E0915852D470D6B00D3409D /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+				6EA478192D55543C006A42F8 /* XCRemoteSwiftPackageReference "Swollama" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6E8893E52D41E43A000AC235 /* Products */;
@@ -411,6 +415,14 @@
 				minimumVersion = 5.0.7;
 			};
 		};
+		6EA478192D55543C006A42F8 /* XCRemoteSwiftPackageReference "Swollama" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/marcusziade/Swollama.git";
+			requirement = {
+				branch = master;
+				kind = branch;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -428,6 +440,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 6E8893F62D420A49000AC235 /* XCRemoteSwiftPackageReference "OllamaKit" */;
 			productName = OllamaKit;
+		};
+		6EA4781A2D55543C006A42F8 /* Swollama */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6EA478192D55543C006A42F8 /* XCRemoteSwiftPackageReference "Swollama" */;
+			productName = Swollama;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

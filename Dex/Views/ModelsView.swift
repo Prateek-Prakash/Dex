@@ -7,6 +7,7 @@
 
 import OllamaKit
 import SwiftUI
+import Swollama
 
 struct ModelsView: View {
     @EnvironmentObject var globalVM: GlobalVM

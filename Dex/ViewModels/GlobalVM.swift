@@ -8,6 +8,7 @@
 import Combine
 import OllamaKit
 import SwiftUI
+import Swollama
 
 @MainActor
 final class GlobalVM: ObservableObject {
