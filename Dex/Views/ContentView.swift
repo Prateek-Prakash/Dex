@@ -11,7 +11,7 @@ struct ContentView: View {
     @StateObject var globalVM = GlobalVM()
     
     @State var showModelsView: Bool = false
-    @State var showAboutview: Bool = false
+    @State var showAboutView: Bool = false
     @State var hapticTrigger: Bool = false
     
     @State var searchText: String = ""
@@ -69,7 +69,7 @@ struct ContentView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        showAboutview.toggle()
+                        showAboutView.toggle()
                     } label: {
                         Image(systemName: "questionmark.circle")
                     }
@@ -83,8 +83,8 @@ struct ContentView: View {
                     .interactiveDismissDisabled(false)
             }
             .sheet(isPresented: Binding(
-                get: { showAboutview || !globalVM.isReachable },
-                set: { newValue in showAboutview = newValue }
+                get: { showAboutView || !globalVM.isReachable },
+                set: { newValue in showAboutView = newValue }
             )) {
                 AboutView()
                     .environmentObject(globalVM)
