@@ -7,20 +7,27 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		6E0500842D44697B0029CD5D /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 6E0500832D44697B0029CD5D /* Alamofire */; };
-		6E0915872D470D6B00D3409D /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 6E0915862D470D6B00D3409D /* MarkdownUI */; };
 		6E0915AC2D48429000D3409D /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 6E0915AA2D48429000D3409D /* LICENSE */; };
 		6E0915AD2D48429000D3409D /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 6E0915AB2D48429000D3409D /* README.md */; };
 		6E0915AF2D4842E700D3409D /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = 6E0915AE2D4842E700D3409D /* .gitignore */; };
-		6E8893F82D420A49000AC235 /* OllamaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6E8893F72D420A49000AC235 /* OllamaKit */; };
-		6EA4781B2D55543C006A42F8 /* Swollama in Frameworks */ = {isa = PBXBuildFile; productRef = 6EA4781A2D55543C006A42F8 /* Swollama */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D1E70000000000000000000B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6E8893DC2D41E43A000AC235 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6E8893E32D41E43A000AC235;
+			remoteInfo = Dex;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		6E0915AA2D48429000D3409D /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
 		6E0915AB2D48429000D3409D /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		6E0915AE2D4842E700D3409D /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		6E8893E42D41E43A000AC235 /* Dex.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dex.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D1E700000000000000000001 /* DexTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DexTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -42,6 +49,11 @@
 			path = Dex;
 			sourceTree = "<group>";
 		};
+		D1E700000000000000000002 /* DexTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = DexTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -49,10 +61,13 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				6EA4781B2D55543C006A42F8 /* Swollama in Frameworks */,
-				6E0915872D470D6B00D3409D /* MarkdownUI in Frameworks */,
-				6E8893F82D420A49000AC235 /* OllamaKit in Frameworks */,
-				6E0500842D44697B0029CD5D /* Alamofire in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D1E700000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -66,6 +81,7 @@
 				6E0915AA2D48429000D3409D /* LICENSE */,
 				6E0915AB2D48429000D3409D /* README.md */,
 				6E8893E62D41E43A000AC235 /* Dex */,
+				D1E700000000000000000002 /* DexTests */,
 				6E8893E52D41E43A000AC235 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -74,6 +90,7 @@
 			isa = PBXGroup;
 			children = (
 				6E8893E42D41E43A000AC235 /* Dex.app */,
+				D1E700000000000000000001 /* DexTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -97,15 +114,30 @@
 				6E8893E62D41E43A000AC235 /* Dex */,
 			);
 			name = Dex;
-			packageProductDependencies = (
-				6E8893F72D420A49000AC235 /* OllamaKit */,
-				6E0500832D44697B0029CD5D /* Alamofire */,
-				6E0915862D470D6B00D3409D /* MarkdownUI */,
-				6EA4781A2D55543C006A42F8 /* Swollama */,
-			);
 			productName = Dex;
 			productReference = 6E8893E42D41E43A000AC235 /* Dex.app */;
 			productType = "com.apple.product-type.application";
+		};
+		D1E700000000000000000006 /* DexTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D1E700000000000000000007 /* Build configuration list for PBXNativeTarget "DexTests" */;
+			buildPhases = (
+				D1E700000000000000000003 /* Sources */,
+				D1E700000000000000000004 /* Frameworks */,
+				D1E700000000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D1E70000000000000000000A /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D1E700000000000000000002 /* DexTests */,
+			);
+			name = DexTests;
+			productName = DexTests;
+			productReference = D1E700000000000000000001 /* DexTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -120,6 +152,10 @@
 					6E8893E32D41E43A000AC235 = {
 						CreatedOnToolsVersion = 16.2;
 					};
+					D1E700000000000000000006 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 6E8893E32D41E43A000AC235;
+					};
 				};
 			};
 			buildConfigurationList = 6E8893DF2D41E43A000AC235 /* Build configuration list for PBXProject "Dex" */;
@@ -131,18 +167,13 @@
 			);
 			mainGroup = 6E8893DB2D41E43A000AC235;
 			minimizedProjectReferenceProxies = 1;
-			packageReferences = (
-				6E8893F62D420A49000AC235 /* XCRemoteSwiftPackageReference "OllamaKit" */,
-				6E0500822D44697B0029CD5D /* XCRemoteSwiftPackageReference "Alamofire" */,
-				6E0915852D470D6B00D3409D /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
-				6EA478192D55543C006A42F8 /* XCRemoteSwiftPackageReference "Swollama" */,
-			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6E8893E52D41E43A000AC235 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				6E8893E32D41E43A000AC235 /* Dex */,
+				D1E700000000000000000006 /* DexTests */,
 			);
 		};
 /* End PBXProject section */
@@ -158,6 +189,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D1E700000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -168,7 +206,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D1E700000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D1E70000000000000000000A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6E8893E32D41E43A000AC235 /* Dex */;
+			targetProxy = D1E70000000000000000000B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		6E8893F12D41E43B000AC235 /* Debug */ = {
@@ -367,6 +420,48 @@
 			};
 			name = Release;
 		};
+		D1E700000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NZ3JV53WDD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Teekzilla.DexTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dex.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Dex";
+			};
+			name = Debug;
+		};
+		D1E700000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NZ3JV53WDD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Teekzilla.DexTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dex.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Dex";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -388,65 +483,17 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		D1E700000000000000000007 /* Build configuration list for PBXNativeTarget "DexTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D1E700000000000000000008 /* Debug */,
+				D1E700000000000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		6E0500822D44697B0029CD5D /* XCRemoteSwiftPackageReference "Alamofire" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/Alamofire/Alamofire.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 5.10.2;
-			};
-		};
-		6E0915852D470D6B00D3409D /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.4.1;
-			};
-		};
-		6E8893F62D420A49000AC235 /* XCRemoteSwiftPackageReference "OllamaKit" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/kevinhermawan/OllamaKit.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 5.0.7;
-			};
-		};
-		6EA478192D55543C006A42F8 /* XCRemoteSwiftPackageReference "Swollama" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/marcusziade/Swollama.git";
-			requirement = {
-				branch = master;
-				kind = branch;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		6E0500832D44697B0029CD5D /* Alamofire */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 6E0500822D44697B0029CD5D /* XCRemoteSwiftPackageReference "Alamofire" */;
-			productName = Alamofire;
-		};
-		6E0915862D470D6B00D3409D /* MarkdownUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 6E0915852D470D6B00D3409D /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
-			productName = MarkdownUI;
-		};
-		6E8893F72D420A49000AC235 /* OllamaKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 6E8893F62D420A49000AC235 /* XCRemoteSwiftPackageReference "OllamaKit" */;
-			productName = OllamaKit;
-		};
-		6EA4781A2D55543C006A42F8 /* Swollama */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 6EA478192D55543C006A42F8 /* XCRemoteSwiftPackageReference "Swollama" */;
-			productName = Swollama;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 6E8893DC2D41E43A000AC235 /* Project object */;
 }

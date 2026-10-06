@@ -37,7 +37,7 @@ struct ContentView: View {
                             .sensoryFeedback(.error, trigger: hapticTrigger)
                             .padding(.trailing, 8.0)
                         Menu {
-                            ForEach(globalVM.okModels, id: \.name) { model in
+                            ForEach(globalVM.models) { model in
                                 Button {
                                     globalVM.selectedModel = model.name
                                     UIImpactFeedbackGenerator(style: .light).impactOccurred()

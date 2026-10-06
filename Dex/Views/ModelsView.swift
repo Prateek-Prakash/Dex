@@ -5,15 +5,14 @@
 //  Created by Prateek Prakash on 1/22/25.
 //
 
-import OllamaKit
 import SwiftUI
-import Swollama
 
 struct ModelsView: View {
     @EnvironmentObject var globalVM: GlobalVM
     
     @State var showPullDialog: Bool = false
     @State var modelName: String = ""
+    @State var modelToDelete: OllamaModel?
     
     var body: some View {
         NavigationStack {
@@ -75,9 +74,9 @@ struct ModelsView: View {
                     }
                 }
                 // Completed
-                ForEach(globalVM.okModels, id: \.name) { model in
+                ForEach(globalVM.models) { model in
                     NavigationLink {
-                        ModelDetailsView(okModel: model)
+                        ModelDetailsView(model: model)
                     } label: {
                         LabeledContent {
                             Text(model.size.byteSize)
@@ -86,9 +85,9 @@ struct ModelsView: View {
                                 .foregroundStyle(.tertiary)
                         } label: {
                             VStack(alignment: .leading) {
-                                Text(model.name.split(separator: ":")[0].uppercased())
+                                Text(model.baseName.uppercased())
                                     .font(.system(size: 12.0, weight: .bold, design: .rounded))
-                                Text(model.name.split(separator: ":")[1].uppercased())
+                                Text(model.tag.uppercased())
                                     .font(.system(size: 10.0, weight: .bold, design: .rounded))
                                     .foregroundStyle(.secondary)
                                 Text(model.digest.prefix(12).uppercased())
@@ -97,8 +96,13 @@ struct ModelsView: View {
                             }
                         }
                     }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button("Delete") {
+                            modelToDelete = model
+                        }
+                        .tint(Color.red)
+                    }
                 }
-                .onDelete(perform: globalVM.deleteModel)
             }
             .listStyle(.plain)
             .toolbar {
@@ -134,6 +138,17 @@ struct ModelsView: View {
                 .disabled(modelName.isEmpty)
                 Button("Cancel", role: .cancel) {}
                 
+            }
+            .alert("Delete Model", isPresented: Binding(
+                get: { modelToDelete != nil },
+                set: { if !$0 { modelToDelete = nil } }
+            ), presenting: modelToDelete) { model in
+                Button("Delete", role: .destructive) {
+                    globalVM.deleteModel(named: model.name)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { model in
+                Text("\(model.baseName.uppercased())\n\(model.tag.uppercased())\n\(model.digest.prefix(12).uppercased())\n\(model.size.byteSize)")
             }
         }
         .tint(Color.primary)

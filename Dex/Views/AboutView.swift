@@ -17,11 +17,21 @@ struct AboutView: View {
             List {
                 Section {
                     TextField("Server URL", text: $serverUrl)
+                        .keyboardType(.URL)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
                         .onChange(of: serverUrl) {
-                            globalVM.initOllamaKit()
+                            globalVM.connect()
                         }
+                    LabeledContent("Status", value: globalVM.serverStatus)
+                }
+                Section {
+                    TextField("Access Client ID", text: $globalVM.accessClientID)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .onChange(of: globalVM.accessClientID) { globalVM.saveAccess() }
+                    SecureField("Access Client Secret", text: $globalVM.accessClientSecret)
+                        .onChange(of: globalVM.accessClientSecret) { globalVM.saveAccess() }
                 }
                 Section {
                     LabeledContent("Name", value: "Dex")

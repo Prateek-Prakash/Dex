@@ -5,34 +5,32 @@
 //  Created by Prateek Prakash on 1/26/25.
 //
 
-import OllamaKit
 import SwiftUI
-import Swollama
 
 struct ModelDetailsView: View {
-    let okModel: OKModelResponse.Model
+    let model: OllamaModel
     
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    LabeledContent("Name", value: okModel.name.split(separator: ":")[0])
+                    LabeledContent("Name", value: model.baseName)
                         .fontDesign(.rounded)
-                    LabeledContent("Tag", value: okModel.name.split(separator: ":")[1])
+                    LabeledContent("Tag", value: model.tag)
                         .fontDesign(.rounded)
-                    LabeledContent("Hash", value: okModel.digest.prefix(12))
+                    LabeledContent("Hash", value: model.digest.prefix(12))
                         .fontDesign(.rounded)
-                    LabeledContent("Size", value: okModel.size.byteSize)
+                    LabeledContent("Size", value: model.size.byteSize)
                         .fontDesign(.rounded)
                 }
                 Section {
-                    LabeledContent("Format", value: okModel.details.format)
+                    LabeledContent("Format", value: model.details.format ?? "—")
                         .fontDesign(.rounded)
-                    LabeledContent("Family", value: okModel.details.family)
+                    LabeledContent("Family", value: model.details.family ?? "—")
                         .fontDesign(.rounded)
-                    LabeledContent("Parameter Size", value: okModel.details.parameterSize)
+                    LabeledContent("Parameter Size", value: model.details.parameterSize ?? "—")
                         .fontDesign(.rounded)
-                    LabeledContent("Quantization Level", value: okModel.details.quantizationLevel)
+                    LabeledContent("Quantization Level", value: model.details.quantizationLevel ?? "—")
                         .fontDesign(.rounded)
                 }
             }
