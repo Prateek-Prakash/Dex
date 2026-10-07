@@ -21,6 +21,16 @@ final class GlobalVM: ObservableObject {
     @Published var serverStatus: String = "Not Set"
     @Published var models: [OllamaModel] = []
 
+    /// The picked model, when the server has it. The choice itself persists
+    /// in `selectedModel` and is cleared only once a model list without it loads.
+    var pickedModel: OllamaModel? {
+        Self.pickedModel(named: selectedModel, in: models)
+    }
+    
+    nonisolated static func pickedModel(named name: String, in models: [OllamaModel]) -> OllamaModel? {
+        models.first { $0.name == name }
+    }
+    
     private var client: OllamaClient?
     private var connectTask: Task<Void, Never>?
     /// Running pulls by model name. Each belongs to the client it started on.
@@ -107,10 +117,7 @@ final class GlobalVM: ObservableObject {
             do {
                 for try await response in client.pull(model: name) {
                     guard !Task.isCancelled else { return }
-                    var status = "\((response.status ?? "").uppercased())..."
-                    if let completed = response.completed, let total = response.total, total > 0 {
-                        status += " \(Int(Double(completed) / Double(total) * 100))%"
-                    }
+                    let status = Self.pullStatus(response)
                     if currentPulls[name] != status {
                         currentPulls[name] = status
                     }
@@ -121,7 +128,7 @@ final class GlobalVM: ObservableObject {
                 // Cancelled by a server switch: leave the entry for the new server.
                 guard !Task.isCancelled else { return }
                 print("Error Pulling Model: \(error.localizedDescription)")
-                currentPulls[name] = "FAILED... \(error.localizedDescription.uppercased())"
+                currentPulls[name] = Self.failedStatus(error.localizedDescription)
             }
             await fetchModels()
         }
@@ -133,6 +140,21 @@ final class GlobalVM: ObservableObject {
         }
     }
 
+    /// "PULLING ABC... 25%" from one line of a pull; the percentage only
+    /// once the server reports a size, and never past 100.
+    nonisolated static func pullStatus(_ progress: OllamaPullProgress) -> String {
+        var status = "\((progress.status ?? "").uppercased())..."
+        if let completed = progress.completed, let total = progress.total, total > 0 {
+            status += " \(min(100, Int(Double(completed) / Double(total) * 100)))%"
+        }
+        return status
+    }
+    
+    /// A failed pull's entry; `resumePulls` skips entries that say FAILED.
+    nonisolated static func failedStatus(_ reason: String) -> String {
+        "FAILED... \(reason.uppercased())"
+    }
+    
     func resumePulls() async {
         for pull in currentPulls where !pull.value.contains("FAILED") {
             Task {

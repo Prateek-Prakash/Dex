@@ -15,8 +15,8 @@ struct ModelsView: View {
     @State var modelToDelete: OllamaModel?
     
     var body: some View {
-        NavigationStack {
-            List {
+        List {
+            Group {
                 // Failed
                 ForEach(Array(globalVM.currentPulls.filter { $0.value.contains("FAILED") }).sorted { $0.key < $1.key }, id: \.key) { entry in
                     LabeledContent {
@@ -26,17 +26,13 @@ struct ModelsView: View {
                                     await globalVM.pullModel(entry.key)
                                 }
                             } label: {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.system(size: 10))
-                                    .frame(width: 12, height: 12)
+                                IconlyIcon(.refresh, .inlineButton)
                             }
                             .buttonStyle(.bordered)
                             Button {
                                 globalVM.currentPulls.removeValue(forKey: entry.key)
                             } label: {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 10))
-                                    .frame(width: 12, height: 12)
+                                IconlyIcon(.close, .inlineButton)
                             }
                             .buttonStyle(.bordered)
                             .tint(Color.red)
@@ -104,52 +100,53 @@ struct ModelsView: View {
                     }
                 }
             }
-            .listStyle(.plain)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Models")
-                        .font(.headline)
-                        .fontDesign(.rounded)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showPullDialog.toggle()
-                    } label: {
-                        Image(systemName: "square.and.arrow.down")
-                    }
-                }
+            .settingsRows(background: .clear)
+        }
+        .settingsList()
+        .listStyle(.plain)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Models")
+                    .font(.headline)
+                    .fontDesign(.rounded)
             }
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarTitleDisplayMode(.inline)
-            .alert("Pull Model", isPresented: $showPullDialog) {
-                TextField("Model Name", text: $modelName)
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    Task {
-                        let name = modelName
-                        modelName = ""
-                        await globalVM.pullModel(name)
-                    }
+                    showPullDialog.toggle()
                 } label: {
-                    Text("Pull")
-                        .fontDesign(.rounded)
+                    IconlyIcon(.download, .action)
                 }
-                .disabled(modelName.isEmpty)
-                Button("Cancel", role: .cancel) {}
-                
             }
-            .alert("Delete Model", isPresented: Binding(
-                get: { modelToDelete != nil },
-                set: { if !$0 { modelToDelete = nil } }
-            ), presenting: modelToDelete) { model in
-                Button("Delete", role: .destructive) {
-                    globalVM.deleteModel(named: model.name)
+        }
+        .toolbarTitleDisplayMode(.inline)
+        .alert("Pull Model", isPresented: $showPullDialog) {
+            TextField("Model Name", text: $modelName)
+                .autocapitalization(.none)
+                .disableAutocorrection(true)
+            Button {
+                Task {
+                    let name = modelName
+                    modelName = ""
+                    await globalVM.pullModel(name)
                 }
-                Button("Cancel", role: .cancel) {}
-            } message: { model in
-                Text("\(model.baseName.uppercased())\n\(model.tag.uppercased())\n\(model.digest.prefix(12).uppercased())\n\(model.size.byteSize)")
+            } label: {
+                Text("Pull")
+                    .fontDesign(.rounded)
             }
+            .disabled(modelName.isEmpty)
+            Button("Cancel", role: .cancel) {}
+            
+        }
+        .alert("Delete Model", isPresented: Binding(
+            get: { modelToDelete != nil },
+            set: { if !$0 { modelToDelete = nil } }
+        ), presenting: modelToDelete) { model in
+            Button("Delete", role: .destructive) {
+                globalVM.deleteModel(named: model.name)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { model in
+            Text("\(model.baseName.uppercased())\n\(model.tag.uppercased())\n\(model.digest.prefix(12).uppercased())\n\(model.size.byteSize)")
         }
         .tint(Color.primary)
     }

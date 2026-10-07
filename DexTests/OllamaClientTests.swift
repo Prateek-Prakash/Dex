@@ -123,6 +123,16 @@ struct OllamaClientTests {
         #expect(model.tag == tag)
     }
 
+    @Test func pickedModelOnlyWhenTheServerHasIt() {
+        let models = ["gemma4:12b", "qwen3.5:9b"].map {
+            OllamaModel(name: $0, size: 0, digest: "", details: .init(format: nil, family: nil, parameterSize: nil, quantizationLevel: nil), capabilities: nil)
+        }
+        #expect(GlobalVM.pickedModel(named: "qwen3.5:9b", in: models)?.name == "qwen3.5:9b")
+        #expect(GlobalVM.pickedModel(named: "llama3:8b", in: models) == nil)
+        #expect(GlobalVM.pickedModel(named: "--", in: models) == nil)
+        #expect(GlobalVM.pickedModel(named: "gemma4:12b", in: []) == nil)
+    }
+
     @Test func accessRefusalReadsAsAccessDenied() async {
         let client = OllamaStubProtocol.client { _ in
             .init(status: 403, contentType: "text/html", body: "<!DOCTYPE html><html>Forbidden</html>")

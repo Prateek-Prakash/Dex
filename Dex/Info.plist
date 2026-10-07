@@ -9,5 +9,9 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Dex connects to Ollama servers on your local network.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Monoton-Regular.ttf</string>
+	</array>
 </dict>
 </plist>

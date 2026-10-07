@@ -11,8 +11,8 @@ struct ModelDetailsView: View {
     let model: OllamaModel
     
     var body: some View {
-        NavigationStack {
-            List {
+        List {
+            Group {
                 Section {
                     LabeledContent("Name", value: model.baseName)
                         .fontDesign(.rounded)
@@ -34,16 +34,17 @@ struct ModelDetailsView: View {
                         .fontDesign(.rounded)
                 }
             }
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Model Details")
-                        .font(.headline)
-                        .fontDesign(.rounded)
-                }
-            }
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarTitleDisplayMode(.inline)
+            .settingsRows()
         }
+        .settingsList()
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Model Details")
+                    .font(.headline)
+                    .fontDesign(.rounded)
+            }
+        }
+        .toolbarTitleDisplayMode(.inline)
         .tint(Color.primary)
     }
 }

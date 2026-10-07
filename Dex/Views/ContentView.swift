@@ -8,90 +8,75 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject var globalVM = GlobalVM()
+    @EnvironmentObject var globalVM: GlobalVM
     
-    @State var showModelsView: Bool = false
-    @State var showAboutView: Bool = false
-    @State var hapticTrigger: Bool = false
+    /// Opens the drawer behind this screen.
+    var openDrawer: () -> Void = {}
     
-    @State var searchText: String = ""
+    
+    /// Mock: only changes the button until incognito chats exist.
+    @State var isIncognito: Bool = false
+    
+    @FocusState private var isComposerFocused: Bool
     
     var body: some View {
         NavigationStack {
-            VStack {
-                ContentUnavailableView("Work-In-Progress", systemImage: "wrench.and.screwdriver", description: Text("ContentView"))
-                    .fontDesign(.rounded)
+            // Rechecked each minute, so the greeting turns over on time.
+            TimelineView(.everyMinute) { context in
+                VStack(spacing: 20.0) {
+                    LiveMark(isAlive: globalVM.isReachable)
+                    // A quiet caption under the mark, not a second headline.
+                    Text(Greeting.text(for: context.date))
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .fontDesign(.rounded)
+                        .tracking(3.0)
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Inside the stack: the stack paints its own system background
+            // over anything set behind it.
+            .background(Color.appBackground.ignoresSafeArea())
+            // Tap anywhere above the message box to put the keyboard away.
+            .contentShape(Rectangle())
+            .onTapGesture {
+                isComposerFocused = false
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    HStack(spacing: 0.0) {
-                        Image(systemName: "livephoto")
-                            .foregroundStyle(Color.primary)
-                            .symbolEffect(.bounce, options: .speed(0.5), isActive: globalVM.isReachable)
-                            .onTapGesture {
-                                withAnimation {
-                                    hapticTrigger.toggle()
-                                }
-                            }
-                            .sensoryFeedback(.error, trigger: hapticTrigger)
-                            .padding(.trailing, 8.0)
-                        Menu {
-                            ForEach(globalVM.models) { model in
-                                Button {
-                                    globalVM.selectedModel = model.name
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                } label: {
-                                    Label(model.name, systemImage: globalVM.selectedModel == model.name ? "brain.fill" : "brain")
-                                }
-                                .disabled(globalVM.selectedModel == model.name)
-                            }
-                        } label: {
-                            VStack(alignment: .leading) {
-                                Text("Dex")
-                                    .font(.system(size: 12.0, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.primary)
-                                    .fontDesign(.rounded)
-                                Text(globalVM.selectedModel.uppercased().replacingOccurrences(of: ":", with: " • "))
-                                    .font(.system(size: 10.0, weight: .light, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
+                    Button {
+                        openDrawer()
+                    } label: {
+                        IconlyIcon(.menu, .action)
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isIncognito.toggle()
                         }
-                        .foregroundStyle(.primary)
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showModelsView.toggle()
                     } label: {
-                        Image(systemName: "archivebox")
+                        // On: inverted icon in a filled circle, like Claude.
+                        // The circle is a backdrop, not padding, so the button
+                        // stays the menu button's size and its glass stays round.
+                        IconlyIcon(.incognito, .action)
+                            .foregroundStyle(isIncognito ? Color.appBackground : Color.primary)
+                            .background {
+                                Circle()
+                                    .fill(isIncognito ? Color.primary : Color.clear)
+                                    .frame(width: 36.0, height: 36.0)
+                            }
                     }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showAboutView.toggle()
-                    } label: {
-                        Image(systemName: "questionmark.circle")
-                    }
+                    .sensoryFeedback(.selection, trigger: isIncognito)
                 }
             }
-            .toolbarBackground(.visible, for: .navigationBar)
+            .navigationTitle(isIncognito ? "Incognito" : "")
             .toolbarTitleDisplayMode(.inline)
-            .sheet(isPresented: $showModelsView) {
-                ModelsView()
+            .safeAreaInset(edge: .bottom) {
+                ComposerView(isFocused: $isComposerFocused)
                     .environmentObject(globalVM)
-                    .interactiveDismissDisabled(false)
-            }
-            .sheet(isPresented: Binding(
-                get: { showAboutView || !globalVM.isReachable },
-                set: { newValue in showAboutView = newValue }
-            )) {
-                AboutView()
-                    .environmentObject(globalVM)
-                    .interactiveDismissDisabled(!globalVM.isReachable)
-            }
-            .searchable(text: $searchText, prompt: Text("Search")) {
-                // Something
             }
         }
         .tint(Color.primary)
@@ -100,4 +85,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+        .environmentObject(GlobalVM())
 }
