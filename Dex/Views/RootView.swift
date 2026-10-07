@@ -20,8 +20,9 @@ struct RootView: View {
         case folder(UUID)
     }
     
-    /// Owned here so the connection survives switching pages.
-    @StateObject private var globalVM = GlobalVM()
+    /// Owned here so the connection survives switching pages; it owns the
+    /// server's models.
+    @StateObject private var serverVM = ServerVM()
     /// Owned here so the chat survives switching pages.
     @StateObject private var chatVM = ChatVM()
     @Environment(\.modelContext) private var modelContext
@@ -97,7 +98,8 @@ struct RootView: View {
                                    leave: { show(.folders) })
                     }
                 }
-                    .environmentObject(globalVM)
+                    .environmentObject(serverVM)
+                    .environmentObject(serverVM.models)
                     .environmentObject(chatVM)
                     .allowsHitTesting(!isDrawerOpen)
                     // Opaque, or the drawer shows through the placeholder.
@@ -142,7 +144,8 @@ struct RootView: View {
         // Here, not on a page, so the drawer's gear opens it from any page.
         .sheet(isPresented: $showSettingsView) {
             SettingsView()
-                .environmentObject(globalVM)
+                .environmentObject(serverVM)
+                .environmentObject(serverVM.models)
                 .presentationBackground(Color.settingsBackground)
         }
     }

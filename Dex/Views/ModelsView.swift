@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct ModelsView: View {
-    @EnvironmentObject var globalVM: GlobalVM
+    @EnvironmentObject var modelsVM: ModelsVM
     
     @State var showPullDialog: Bool = false
     @State var modelName: String = ""
@@ -18,19 +18,19 @@ struct ModelsView: View {
         List {
             Group {
                 // Failed
-                ForEach(Array(globalVM.currentPulls.filter { $0.value.contains("FAILED") }).sorted { $0.key < $1.key }, id: \.key) { entry in
+                ForEach(Array(modelsVM.currentPulls.filter { $0.value.contains("FAILED") }).sorted { $0.key < $1.key }, id: \.key) { entry in
                     LabeledContent {
                         HStack {
                             Button {
                                 Task {
-                                    await globalVM.pullModel(entry.key)
+                                    await modelsVM.pullModel(entry.key)
                                 }
                             } label: {
                                 IconlyIcon(.refresh, .inlineButton)
                             }
                             .buttonStyle(.bordered)
                             Button {
-                                globalVM.currentPulls.removeValue(forKey: entry.key)
+                                modelsVM.currentPulls.removeValue(forKey: entry.key)
                             } label: {
                                 IconlyIcon(.close, .inlineButton)
                             }
@@ -52,7 +52,7 @@ struct ModelsView: View {
                     }
                 }
                 // In-Progress
-                ForEach(Array(globalVM.currentPulls.filter { !$0.value.contains("FAILED") }).sorted { $0.key < $1.key }, id: \.key) { entry in
+                ForEach(Array(modelsVM.currentPulls.filter { !$0.value.contains("FAILED") }).sorted { $0.key < $1.key }, id: \.key) { entry in
                     LabeledContent {
                         ProgressView()
                     } label: {
@@ -70,7 +70,7 @@ struct ModelsView: View {
                     }
                 }
                 // Completed
-                ForEach(globalVM.models) { model in
+                ForEach(modelsVM.models) { model in
                     NavigationLink {
                         ModelDetailsView(model: model)
                     } label: {
@@ -127,7 +127,7 @@ struct ModelsView: View {
                 Task {
                     let name = modelName
                     modelName = ""
-                    await globalVM.pullModel(name)
+                    await modelsVM.pullModel(name)
                 }
             } label: {
                 Text("Pull")
@@ -142,7 +142,7 @@ struct ModelsView: View {
             set: { if !$0 { modelToDelete = nil } }
         ), presenting: modelToDelete) { model in
             Button("Delete", role: .destructive) {
-                globalVM.deleteModel(named: model.name)
+                modelsVM.deleteModel(named: model.name)
             }
             Button("Cancel", role: .cancel) {}
         } message: { model in
@@ -154,6 +154,6 @@ struct ModelsView: View {
 
 #Preview {
     ModelsView()
-        .environmentObject(GlobalVM())
+        .environmentObject(ModelsVM())
 }
 

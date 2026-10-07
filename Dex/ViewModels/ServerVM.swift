@@ -1,44 +1,32 @@
 //
-//  GlobalVM.swift
+//  ServerVM.swift
 //  Dex
 //
 //  Created by Prateek Prakash on 1/24/25.
 //
 
-import Combine
 import SwiftUI
 
+/// The Ollama server: its address and Cloudflare Access keys, and whether
+/// it answers. Owns the server's `ModelsVM`, and tells it when the server
+/// changes and when a connection comes up.
 @MainActor
-final class GlobalVM: ObservableObject {
+final class ServerVM: ObservableObject {
     @AppStorage("serverUrl") var serverUrl = ""
-    @AppStorage("selectedModel") var selectedModel: String = "--"
-    @AppStorage("currentPulls") var currentPulls: [String:String] = [:]
 
     @Published var accessClientID = KeychainService.load(KeychainService.accessClientID)
     @Published var accessClientSecret = KeychainService.load(KeychainService.accessClientSecret)
 
-    @Published var isReachable: Bool = false
-    @Published var serverStatus: String = "Not Set"
-    @Published var models: [OllamaModel] = []
+    @Published private(set) var isReachable: Bool = false
+    @Published private(set) var serverStatus: String = "Not Set"
 
-    /// The picked model, when the server has it. The choice itself persists
-    /// in `selectedModel` and is cleared only once a model list without it loads.
-    var pickedModel: OllamaModel? {
-        Self.pickedModel(named: selectedModel, in: models)
-    }
-    
-    nonisolated static func pickedModel(named name: String, in models: [OllamaModel]) -> OllamaModel? {
-        models.first { $0.name == name }
-    }
-    
     /// The connection to the server, once its address is valid.
     private(set) var client: OllamaClient?
+    /// The models on the server, and pulls of new ones.
+    let models = ModelsVM()
     private var connectTask: Task<Void, Never>?
-    /// Running pulls by model name. Each belongs to the client it started on.
-    private var pullTasks: [String: Task<Void, Never>] = [:]
 
     init() {
-        UITextField.appearance().clearButtonMode = .whileEditing
         connect()
     }
 
@@ -52,6 +40,7 @@ final class GlobalVM: ObservableObject {
         connectTask?.cancel()
         guard let url = OllamaClient.serverURL(from: serverUrl) else {
             client = nil
+            models.use(nil)
             isReachable = false
             serverStatus = serverUrl.isEmpty ? "Not Set" : "Invalid URL"
             return
@@ -60,9 +49,7 @@ final class GlobalVM: ObservableObject {
             id: accessClientID.trimmingCharacters(in: .whitespacesAndNewlines),
             secret: accessClientSecret.trimmingCharacters(in: .whitespacesAndNewlines)))
         self.client = client
-        // Pulls on the old server stop; their entries stay and resume on this one.
-        pullTasks.values.forEach { $0.cancel() }
-        pullTasks = [:]
+        models.use(client)
         serverStatus = "Connecting..."
         connectTask = Task {
             // Typing in the URL field reconnects per keystroke; let it settle.
@@ -73,93 +60,11 @@ final class GlobalVM: ObservableObject {
                 guard !Task.isCancelled else { return }
                 isReachable = true
                 serverStatus = "Ollama \(version)"
-                await fetchModels()
-                await resumePulls()
+                await models.connected()
             } catch {
                 guard !Task.isCancelled else { return }
                 isReachable = false
                 serverStatus = error.localizedDescription
-            }
-        }
-    }
-
-    func fetchModels() async {
-        guard let client else { return }
-        do {
-            models = try await client.models()
-            let names = models.map { $0.name }
-            if !names.contains(selectedModel) {
-                selectedModel = "--"
-            }
-        } catch {
-            print("Error Fetching Models: \(error.localizedDescription)")
-        }
-    }
-
-    func deleteModel(named name: String) {
-        guard let client else { return }
-        models.removeAll { $0.name == name }
-        Task {
-            do {
-                try await client.delete(model: name)
-            } catch {
-                print("Error Deleting Model: \(error.localizedDescription)")
-            }
-            await fetchModels()
-        }
-    }
-
-    func pullModel(_ name: String) async {
-        guard let client else { return }
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, pullTasks[name] == nil else { return }
-        currentPulls[name] = "STARTING..."
-        let task = Task {
-            do {
-                for try await response in client.pull(model: name) {
-                    guard !Task.isCancelled else { return }
-                    let status = Self.pullStatus(response)
-                    if currentPulls[name] != status {
-                        currentPulls[name] = status
-                    }
-                }
-                guard !Task.isCancelled else { return }
-                currentPulls.removeValue(forKey: name)
-            } catch {
-                // Cancelled by a server switch: leave the entry for the new server.
-                guard !Task.isCancelled else { return }
-                print("Error Pulling Model: \(error.localizedDescription)")
-                currentPulls[name] = Self.failedStatus(error.localizedDescription)
-            }
-            await fetchModels()
-        }
-        pullTasks[name] = task
-        await task.value
-        // A server switch may have replaced this pull with a new one.
-        if pullTasks[name] == task {
-            pullTasks[name] = nil
-        }
-    }
-
-    /// "PULLING ABC... 25%" from one line of a pull; the percentage only
-    /// once the server reports a size, and never past 100.
-    nonisolated static func pullStatus(_ progress: OllamaPullProgress) -> String {
-        var status = "\((progress.status ?? "").uppercased())..."
-        if let completed = progress.completed, let total = progress.total, total > 0 {
-            status += " \(min(100, Int(Double(completed) / Double(total) * 100)))%"
-        }
-        return status
-    }
-    
-    /// A failed pull's entry; `resumePulls` skips entries that say FAILED.
-    nonisolated static func failedStatus(_ reason: String) -> String {
-        "FAILED... \(reason.uppercased())"
-    }
-    
-    func resumePulls() async {
-        for pull in currentPulls where !pull.value.contains("FAILED") {
-            Task {
-                await pullModel(pull.key)
             }
         }
     }

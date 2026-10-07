@@ -9,7 +9,7 @@ import SwiftData
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject var globalVM: GlobalVM
+    @EnvironmentObject var serverVM: ServerVM
     @EnvironmentObject var chatVM: ChatVM
     /// Read here, outside the toolbar, for `MoreMenuLabel`.
     @Environment(\.colorScheme) private var colorScheme
@@ -133,7 +133,7 @@ struct ContentView: View {
         // Rechecked each minute, so the greeting turns over on time.
         TimelineView(.everyMinute) { context in
             VStack(spacing: 20.0) {
-                LiveMark(isAlive: globalVM.isReachable)
+                LiveMark(isAlive: serverVM.isReachable)
                 // A quiet caption under the mark, not a second headline.
                 Text(chatVM.isIncognito ? "THIS CHAT WON'T BE SAVED" : Greeting.text(for: context.date))
                     .font(.subheadline)
@@ -183,6 +183,7 @@ private struct ChatSync: View {
 
 #Preview {
     ContentView()
-        .environmentObject(GlobalVM())
+        .environmentObject(ServerVM())
+        .environmentObject(ModelsVM())
         .environmentObject(ChatVM())
 }

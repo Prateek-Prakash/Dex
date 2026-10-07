@@ -33,12 +33,12 @@ struct SupportTests {
         (OllamaPullProgress(status: nil, total: nil, completed: nil, error: nil), "..."),
     ])
     func pullStatus(_ progress: OllamaPullProgress, _ expected: String) {
-        #expect(GlobalVM.pullStatus(progress) == expected)
+        #expect(ModelsVM.pullStatus(progress) == expected)
     }
 
     @Test func failedPullsAreMarkedForResumeToSkip() {
-        #expect(GlobalVM.failedStatus("Pull ended before it finished") == "FAILED... PULL ENDED BEFORE IT FINISHED")
-        #expect(GlobalVM.failedStatus("x").contains("FAILED"))
+        #expect(ModelsVM.failedStatus("Pull ended before it finished") == "FAILED... PULL ENDED BEFORE IT FINISHED")
+        #expect(ModelsVM.failedStatus("x").contains("FAILED"))
     }
 
     @Test(arguments: [

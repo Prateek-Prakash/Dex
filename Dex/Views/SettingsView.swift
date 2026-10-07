@@ -10,7 +10,8 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage("serverUrl") var serverUrl = ""
 
-    @EnvironmentObject var globalVM: GlobalVM
+    @EnvironmentObject var serverVM: ServerVM
+    @EnvironmentObject var modelsVM: ModelsVM
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -23,26 +24,26 @@ struct SettingsView: View {
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
                             .onChange(of: serverUrl) {
-                                globalVM.connect()
+                                serverVM.connect()
                             }
-                        LabeledContent("Status", value: globalVM.serverStatus)
+                        LabeledContent("Status", value: serverVM.serverStatus)
                     }
                     Section {
-                        TextField("Access Client ID", text: $globalVM.accessClientID)
+                        TextField("Access Client ID", text: $serverVM.accessClientID)
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
-                            .onChange(of: globalVM.accessClientID) { globalVM.saveAccess() }
-                        SecureField("Access Client Secret", text: $globalVM.accessClientSecret)
-                            .onChange(of: globalVM.accessClientSecret) { globalVM.saveAccess() }
+                            .onChange(of: serverVM.accessClientID) { serverVM.saveAccess() }
+                        SecureField("Access Client Secret", text: $serverVM.accessClientSecret)
+                            .onChange(of: serverVM.accessClientSecret) { serverVM.saveAccess() }
                     }
                     // After the connection settings it depends on, and only once
                     // a server answers: with none there's nothing to manage.
-                    if globalVM.isReachable {
+                    if serverVM.isReachable {
                         Section {
                             NavigationLink {
                                 ModelsView()
                             } label: {
-                                LabeledContent("Models", value: "\(globalVM.models.count)")
+                                LabeledContent("Models", value: "\(modelsVM.models.count)")
                             }
                         }
                     }
@@ -85,5 +86,6 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
-        .environmentObject(GlobalVM())
+        .environmentObject(ServerVM())
+        .environmentObject(ModelsVM())
 }

@@ -12,7 +12,6 @@ import SwiftUI
 /// the bottom; scrolling up to read leaves it there.
 struct ChatTranscriptView: View {
     @EnvironmentObject var chatVM: ChatVM
-    @EnvironmentObject var globalVM: GlobalVM
 
     @State private var isAtBottom: Bool = true
 
@@ -81,7 +80,8 @@ private struct UserBubble: View {
 
 private struct ReplyView: View {
     @EnvironmentObject var chatVM: ChatVM
-    @EnvironmentObject var globalVM: GlobalVM
+    @EnvironmentObject var serverVM: ServerVM
+    @EnvironmentObject var modelsVM: ModelsVM
 
     let message: ChatMessage
     let isLast: Bool
@@ -174,7 +174,7 @@ private struct ReplyView: View {
 
     private var retryButton: some View {
         Button {
-            chatVM.retry(client: globalVM.client, model: globalVM.pickedModel)
+            chatVM.retry(client: serverVM.client, model: modelsVM.pickedModel)
         } label: {
             HStack(spacing: 6.0) {
                 IconlyIcon(.refresh, .inlineButton)

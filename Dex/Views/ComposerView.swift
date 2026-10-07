@@ -13,7 +13,8 @@ import SwiftUI
 /// stop and send, and the words type into the box as they're heard. Stop
 /// keeps them for editing; cancel puts the box back as it was.
 struct ComposerView: View {
-    @EnvironmentObject var globalVM: GlobalVM
+    @EnvironmentObject var serverVM: ServerVM
+    @EnvironmentObject var modelsVM: ModelsVM
     @EnvironmentObject var chatVM: ChatVM
     
     var isFocused: FocusState<Bool>.Binding
@@ -100,14 +101,14 @@ struct ComposerView: View {
     private var controlsRow: some View {
         HStack {
             Menu {
-                ForEach(globalVM.models) { model in
+                ForEach(modelsVM.models) { model in
                     Button(model.name) {
-                        globalVM.selectedModel = model.name
+                        modelsVM.selectedModel = model.name
                     }
                 }
             } label: {
                 HStack(spacing: 4.0) {
-                    Text(globalVM.pickedModel?.name ?? "Model")
+                    Text(modelsVM.pickedModel?.name ?? "Model")
                         .font(.subheadline)
                         .fontDesign(.rounded)
                         .lineLimit(1)
@@ -169,12 +170,12 @@ struct ComposerView: View {
     }
 
     private var canSend: Bool {
-        !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && globalVM.pickedModel != nil && !chatVM.isStreaming
+        !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && modelsVM.pickedModel != nil && !chatVM.isStreaming
     }
 
     private func send() {
         guard canSend else { return }
-        chatVM.send(message, client: globalVM.client, model: globalVM.pickedModel)
+        chatVM.send(message, client: serverVM.client, model: modelsVM.pickedModel)
         message = ""
     }
 }
@@ -182,6 +183,7 @@ struct ComposerView: View {
 #Preview {
     @Previewable @FocusState var isFocused: Bool
     ComposerView(isFocused: $isFocused)
-        .environmentObject(GlobalVM())
+        .environmentObject(ServerVM())
+        .environmentObject(ModelsVM())
         .environmentObject(ChatVM())
 }
