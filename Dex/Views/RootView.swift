@@ -74,6 +74,7 @@ struct RootView: View {
                     sliver: proxy.size.width - width,
                     page: page,
                     currentChatID: chatVM.chat?.id,
+                    streamingChatIDs: chatVM.streamingChatIDs,
                     select: { show($0) },
                     openChat: { openChat($0) },
                     renameChat: { chatVM.rename($0, to: $1) },

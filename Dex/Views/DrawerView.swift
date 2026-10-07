@@ -18,6 +18,8 @@ struct DrawerView: View {
     var page: RootView.Page = .chat
     /// The saved chat on the main screen; its row is highlighted.
     var currentChatID: UUID?
+    /// Chats with a reply running; their rows show a spinner.
+    var streamingChatIDs: Set<UUID> = []
     /// Shows a page on the main screen.
     var select: (RootView.Page) -> Void = { _ in }
     /// Opens a saved chat on the main screen.
@@ -146,7 +148,8 @@ struct DrawerView: View {
                                 rename: { folderToRename = folder }, delete: { folderToDelete = folder })
                 }
             } else if let chat = chats.first(where: { $0.id.uuidString == item.id }) {
-                row(item.icon, item.title, isSelected: page == .chat && chat.id == currentChatID) {
+                row(item.icon, item.title, isSelected: page == .chat && chat.id == currentChatID,
+                    isReplying: streamingChatIDs.contains(chat.id)) {
                     openChat(chat)
                 }
                 .contextMenu {
@@ -168,7 +171,8 @@ struct DrawerView: View {
     /// row (long press, drag to reorder) is then that rounded shape with its
     /// own color, never the system's black rectangle. Unselected, it's the
     /// drawer's color, so a lifted row reads clear.
-    private func row(_ icon: Iconly, _ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+    private func row(_ icon: Iconly, _ title: String, isSelected: Bool, isReplying: Bool = false,
+                     action: @escaping () -> Void) -> some View {
         let shape = RoundedRectangle(cornerRadius: 12.0, style: .continuous)
         return Button(action: action) {
             HStack(spacing: 14.0) {
@@ -176,6 +180,12 @@ struct DrawerView: View {
                 Text(title)
                     .lineLimit(1)
                     .font(.system(size: rowTextSize, design: .rounded))
+                // A reply still coming, in this chat or off screen.
+                if isReplying {
+                    Spacer(minLength: 0)
+                    ProgressView()
+                        .controlSize(.small)
+                }
             }
             .padding(.horizontal, Self.highlightPadding)
             .frame(maxWidth: .infinity, minHeight: Self.rowHeight, alignment: .leading)

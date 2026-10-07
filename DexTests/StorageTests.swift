@@ -188,18 +188,75 @@ extension StubbedNetworkTests {
             #expect(try context.fetch(FetchDescriptor<Message>()).count == 2)
         }
 
-        @Test func leavingMidReplySavesItStopped() async throws {
+        @Test func leavingMidReplyLetsItFinish() async throws {
             let (vm, context) = Self.vm()
             // Left before the reply's task gets to run.
             vm.send("Hi", client: Self.client(), model: Self.model)
             let chat = try #require(vm.chat)
             vm.reset()
+            #expect(vm.messages.isEmpty)
+            #expect(vm.streamingChatIDs == [chat.id])
             await vm.waitForReply()
-            #expect(chat.sortedMessages.last?.status == "stopped")
+            #expect(chat.sortedMessages.map(\.status) == ["done", "done"])
+            #expect(chat.sortedMessages.last?.content == "Hello there")
+            #expect(vm.streamingChatIDs.isEmpty)
             #expect(try context.fetch(FetchDescriptor<Message>()).count == 2)
 
             vm.open(chat)
-            #expect(vm.canRetry)
+            #expect(vm.messages.map(\.content) == ["Hi", "Hello there"])
+        }
+
+        @Test func twoChatsReplyAtTheirOwnTime() async throws {
+            let (vm, _) = Self.vm()
+            vm.send("First", client: Self.client(), model: Self.model)
+            let first = try #require(vm.chat)
+            vm.reset()
+            vm.send("Second", client: Self.client(), model: Self.model)
+            let second = try #require(vm.chat)
+            #expect(vm.streamingChatIDs == [first.id, second.id])
+            await vm.waitForReply()
+            #expect(vm.streamingChatIDs.isEmpty)
+            for chat in [first, second] {
+                #expect(chat.sortedMessages.map(\.status) == ["done", "done"])
+            }
+            // The one on screen shows its finished reply.
+            #expect(vm.messages.map(\.content) == ["Second", "Hello there"])
+        }
+
+        @Test func reopenedMidReplyPicksUpLive() async throws {
+            let (vm, _) = Self.vm()
+            vm.send("Hi", client: Self.client(), model: Self.model)
+            let chat = try #require(vm.chat)
+            vm.reset()
+            vm.open(chat)
+            #expect(vm.isStreaming)
+            await vm.waitForReply()
+            #expect(!vm.isStreaming)
+            #expect(vm.messages.last?.status == .done)
+            #expect(vm.messages.last?.content == "Hello there")
+        }
+
+        @Test func leavingIncognitoMidReplyStopsIt() async throws {
+            let (vm, context) = Self.vm()
+            vm.isIncognito = true
+            vm.send("Secret", client: Self.client(), model: Self.model)
+            vm.reset()
+            #expect(vm.streamingChatIDs.isEmpty)
+            await vm.waitForReply()
+            #expect(try context.fetch(FetchDescriptor<Message>()).isEmpty)
+            #expect(vm.messages.isEmpty)
+        }
+
+        @Test func deletingAChatReplyingOffScreenStopsIt() async throws {
+            let (vm, context) = Self.vm()
+            vm.send("Hi", client: Self.client(), model: Self.model)
+            let chat = try #require(vm.chat)
+            vm.reset()
+            vm.delete(chat)
+            #expect(vm.streamingChatIDs.isEmpty)
+            await vm.waitForReply()
+            #expect(try Self.chats(context).isEmpty)
+            #expect(try context.fetch(FetchDescriptor<Message>()).isEmpty)
         }
 
         @Test func sequenceFollowsMessagesSyncedInWhileOpen() async throws {
