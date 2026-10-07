@@ -5,6 +5,7 @@
 //  Created by Prateek Prakash on 1/22/25.
 //
 
+import SwiftData
 import SwiftUI
 
 @main
@@ -13,5 +14,6 @@ struct DexApp: App {
         WindowGroup {
             RootView()
         }
+        .modelContainer(Storage.shared)
     }
 }

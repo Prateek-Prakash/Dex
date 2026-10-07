@@ -15,6 +15,9 @@ struct ContentView: View {
     var openDrawer: () -> Void = {}
     
     @FocusState private var isComposerFocused: Bool
+    /// The chat whose Rename or Delete dialog is up.
+    @State private var chatToRename: Chat?
+    @State private var chatToDelete: Chat?
     
     var body: some View {
         NavigationStack {
@@ -50,8 +53,8 @@ struct ContentView: View {
                 }
                 // Like Claude: a chat turns incognito before it starts, not
                 // after. A started incognito chat gets a close button instead,
-                // back to a new, ordinary chat; a started ordinary chat has
-                // neither.
+                // back to a new, ordinary chat; a started saved chat gets the
+                // ⋯ menu, the drawer's long-press actions.
                 if chatVM.messages.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
                         incognitoButton
@@ -67,8 +70,23 @@ struct ContentView: View {
                         }
                         .accessibilityLabel("Close Incognito Chat")
                     }
+                } else if let chat = chatVM.chat {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            ChatActions(rename: { chatToRename = chat }, delete: { chatToDelete = chat })
+                        } label: {
+                            IconlyIcon(.more, .action)
+                        }
+                        .accessibilityLabel("Chat Options")
+                    }
                 }
             }
+            .chatActionAlerts(
+                renaming: $chatToRename,
+                deleting: $chatToDelete,
+                rename: { chatVM.rename($0, to: $1) },
+                delete: { chatVM.delete($0) }
+            )
             .navigationTitle(chatVM.isIncognito ? "Incognito" : "")
             .toolbarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {

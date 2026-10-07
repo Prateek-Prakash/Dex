@@ -34,10 +34,10 @@ struct DrawerItem: Identifiable, Hashable {
         kind == .chat ? .chat : .folder
     }
     
-    /// Empty until folders and chats are stored; a section with no items
-    /// isn't shown.
-    static let pinned: [DrawerItem] = []
-    static let recent: [DrawerItem] = []
+    /// A saved chat's row, keyed by the chat's id.
+    init(_ chat: Chat) {
+        self.init(id: chat.id.uuidString, title: chat.title, kind: chat.folder == nil ? .chat : .folderChat)
+    }
     
     /// The drawer's sections in order, leaving out any with no items.
     static func sections(pinned: [DrawerItem], recent: [DrawerItem]) -> [(title: String, items: [DrawerItem])] {

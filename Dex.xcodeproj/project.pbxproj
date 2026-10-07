@@ -364,6 +364,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Dex/Info.plist;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Dex connects to Ollama servers on your local network.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Dex listens while you dictate a message.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Dex turns what you say into text for your message.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -405,6 +408,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Dex/Info.plist;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Dex connects to Ollama servers on your local network.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Dex listens while you dictate a message.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Dex turns what you say into text for your message.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -537,7 +543,6 @@
 			productName = HighlightSwift;
 		};
 /* End XCSwiftPackageProductDependency section */
-
 	};
 	rootObject = 6E8893DC2D41E43A000AC235 /* Project object */;
 }

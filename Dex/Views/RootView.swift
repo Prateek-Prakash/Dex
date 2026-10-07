@@ -5,6 +5,7 @@
 //  Created by Prateek Prakash on 10/6/26.
 //
 
+import SwiftData
 import SwiftUI
 
 /// The drawer sits underneath; the main screen slides right to reveal it.
@@ -23,6 +24,7 @@ struct RootView: View {
     @StateObject private var globalVM = GlobalVM()
     /// Owned here so the chat survives switching pages.
     @StateObject private var chatVM = ChatVM()
+    @Environment(\.modelContext) private var modelContext
     @State var page: Page = .chat
     @State var isDrawerOpen: Bool = false
     @State var showSettingsView: Bool = false
@@ -63,7 +65,11 @@ struct RootView: View {
                 DrawerView(
                     sliver: proxy.size.width - width,
                     page: page,
+                    currentChatID: chatVM.chat?.id,
                     select: { show($0) },
+                    openChat: { openChat($0) },
+                    renameChat: { chatVM.rename($0, to: $1) },
+                    deleteChat: { chatVM.delete($0) },
                     openSettings: { showSettingsView = true },
                     newSession: { newSession() }
                 )
@@ -110,6 +116,8 @@ struct RootView: View {
             .simultaneousGesture(drag(width: width))
         }
         .sensoryFeedback(.impact(weight: .light), trigger: isDrawerOpen)
+        // Before anything can be sent: the chat saves into this store.
+        .onAppear { chatVM.context = modelContext }
         // A cancelled drag: `onEnded` never ran, so settle where it was.
         .onChange(of: isGestureActive) {
             if !isGestureActive, isDragging != nil {
@@ -171,6 +179,12 @@ struct RootView: View {
         setDrawer(open: false)
     }
     
+    /// A saved chat on the main screen.
+    private func openChat(_ chat: Chat) {
+        chatVM.open(chat)
+        show(.chat)
+    }
+
     /// An empty chat on the main screen.
     private func newSession() {
         chatVM.reset()
@@ -191,4 +205,5 @@ struct RootView: View {
 
 #Preview {
     RootView()
+        .modelContainer(Storage.inMemory())
 }

@@ -5,27 +5,40 @@
 //  Created by Prateek Prakash on 10/6/26.
 //
 
+import SwiftData
 import SwiftUI
 
-/// The drawer behind the main screen: Folders, then pinned and recent
-/// folders and chats once they're stored.
+/// The drawer behind the main screen: Folders, then pinned folders and
+/// chats, then recent chats.
 struct DrawerView: View {
     /// The main screen's uncovered width at the drawer's right; content
     /// stays clear of it.
     var sliver: CGFloat = 0
     /// The page the main screen shows; its row is highlighted.
     var page: RootView.Page = .chat
+    /// The saved chat on the main screen; its row is highlighted.
+    var currentChatID: UUID?
     /// Shows a page on the main screen.
     var select: (RootView.Page) -> Void = { _ in }
+    /// Opens a saved chat on the main screen.
+    var openChat: (Chat) -> Void = { _ in }
+    /// Renames a saved chat, once confirmed.
+    var renameChat: (Chat, String) -> Void = { _, _ in }
+    /// Deletes a saved chat, once confirmed.
+    var deleteChat: (Chat) -> Void = { _ in }
     /// Opens Settings.
     var openSettings: () -> Void = {}
     /// Starts an empty chat and closes the drawer onto it.
     var newSession: () -> Void = {}
     
-    /// The pinned or recent row that is highlighted; nil for the Folders
-    /// row or a new session. A folder opens its own page; mock: every chat
-    /// opens the one chat screen.
+    /// The pinned folder row that is highlighted; nil otherwise. A chat
+    /// row's highlight follows `currentChatID` instead.
     @State private var selectedItem: DrawerItem?
+    /// Every saved chat, latest first.
+    @Query(sort: \Chat.lastMessageAt, order: .reverse) private var chats: [Chat]
+    /// The chat whose Rename or Delete dialog is up.
+    @State private var chatToRename: Chat?
+    @State private var chatToDelete: Chat?
     /// Section headers, a step above body; follow Dynamic Type.
     @ScaledMetric(relativeTo: .body) private var headerTextSize: CGFloat = 17.0
     
@@ -41,7 +54,7 @@ struct DrawerView: View {
                     selectedItem = nil
                     select(.folders)
                 }
-                ForEach(DrawerItem.sections(pinned: DrawerItem.pinned, recent: DrawerItem.recent), id: \.title) { section in
+                ForEach(DrawerItem.sections(pinned: [], recent: chats.map(DrawerItem.init)), id: \.title) { section in
                     self.section(section.title, section.items)
                 }
             }
@@ -72,6 +85,7 @@ struct DrawerView: View {
                 }
             }
             .toolbarTitleDisplayMode(.inline)
+            .chatActionAlerts(renaming: $chatToRename, deleting: $chatToDelete, rename: renameChat, delete: deleteChat)
             .safeAreaInset(edge: .bottom) {
                 HStack {
                     Button {
@@ -117,9 +131,19 @@ struct DrawerView: View {
             .listRowInsets(rowInsets)
             .listRowBackground(Color.clear)
         ForEach(items) { item in
-            row(item.icon, item.title, isSelected: selectedItem == item) {
-                selectedItem = item
-                select(item.kind == .folder ? .folder(item.title) : .chat)
+            if item.kind == .folder {
+                row(item.icon, item.title, isSelected: selectedItem == item) {
+                    selectedItem = item
+                    select(.folder(item.title))
+                }
+            } else if let chat = chats.first(where: { $0.id.uuidString == item.id }) {
+                row(item.icon, item.title, isSelected: page == .chat && chat.id == currentChatID) {
+                    selectedItem = nil
+                    openChat(chat)
+                }
+                .contextMenu {
+                    ChatActions(rename: { chatToRename = chat }, delete: { chatToDelete = chat })
+                }
             }
         }
     }
@@ -167,4 +191,5 @@ struct DrawerView: View {
 
 #Preview {
     DrawerView()
+        .modelContainer(Storage.inMemory())
 }

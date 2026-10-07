@@ -1,0 +1,138 @@
+//
+//  Storage.swift
+//  Dex
+//
+//  Created by Prateek Prakash on 10/7/26.
+//
+
+import Foundation
+import SwiftData
+
+// Stored in SwiftData and synced through the iCloud private database.
+// CloudKit's rules shape every model here: no unique attributes, every
+// property optional or defaulted, every relationship optional with an inverse.
+
+/// A folder of chats. Deleting it deletes its chats.
+@Model
+final class Folder {
+    var id: UUID = UUID()
+    var name: String = ""
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
+    /// Nil when unpinned; also orders the pinned section.
+    var pinnedAt: Date?
+    @Relationship(deleteRule: .cascade, inverse: \Chat.folder)
+    var chats: [Chat]? = []
+
+    init(name: String) {
+        self.name = name
+    }
+}
+
+/// A saved chat. Incognito chats never become one.
+@Model
+final class Chat {
+    var id: UUID = UUID()
+    var title: String = ""
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
+    /// When a message last arrived; sorts Recent.
+    var lastMessageAt: Date = Date()
+    /// Nil when unpinned; also orders the pinned section.
+    var pinnedAt: Date?
+    /// The model of the latest reply.
+    var model: String = ""
+    var contextLength: Int = OllamaChatRequest.contextLength
+    /// Nil for a chat on its own.
+    var folder: Folder?
+    @Relationship(deleteRule: .cascade, inverse: \Message.chat)
+    var messages: [Message]? = []
+
+    init(title: String) {
+        self.title = title
+    }
+
+    /// The stored messages in order.
+    var sortedMessages: [Message] {
+        (messages ?? []).sorted { $0.sequence < $1.sequence }
+    }
+}
+
+/// A saved message; `ChatMessage` is its in-memory form.
+@Model
+final class Message {
+    var id: UUID = UUID()
+    var chat: Chat?
+    /// `ChatMessage.Role`'s raw value.
+    var role: String = ChatMessage.Role.user.rawValue
+    var content: String = ""
+    var thinking: String?
+    var createdAt: Date = Date()
+    var sequence: Int = 0
+    var model: String?
+    /// `ChatMessage.Status`'s raw value.
+    var status: String = ChatMessage.Status.done.rawValue
+    var error: String?
+    var promptTokens: Int?
+    var outputTokens: Int?
+
+    init(id: UUID) {
+        self.id = id
+    }
+
+    /// Takes every field but the id and chat from `message`.
+    func update(from message: ChatMessage) {
+        role = message.role.rawValue
+        content = message.content
+        thinking = message.thinking
+        createdAt = message.createdAt
+        sequence = message.sequence
+        model = message.model
+        status = message.status.rawValue
+        error = message.error
+        promptTokens = message.promptTokens
+        outputTokens = message.outputTokens
+    }
+}
+
+extension ChatMessage {
+    init(_ stored: Message) {
+        self.init(
+            id: stored.id,
+            role: Role(rawValue: stored.role) ?? .user,
+            content: stored.content,
+            thinking: stored.thinking,
+            createdAt: stored.createdAt,
+            sequence: stored.sequence,
+            model: stored.model,
+            status: Status(rawValue: stored.status) ?? .done,
+            error: stored.error,
+            promptTokens: stored.promptTokens,
+            outputTokens: stored.outputTokens
+        )
+        // A reply cut off by a quit can't pick up where it left off.
+        if status == .streaming { status = .stopped }
+    }
+}
+
+enum Storage {
+    static let cloudKitContainer = "iCloud.Teekzilla.Dex"
+    static let schema = Schema([Folder.self, Chat.self, Message.self])
+
+    /// The app's store, synced through iCloud.
+    static let shared: ModelContainer = {
+        let configuration = ModelConfiguration(schema: schema, cloudKitDatabase: .private(cloudKitContainer))
+        do {
+            return try ModelContainer(for: schema, configurations: configuration)
+        } catch {
+            // No silent in-memory fallback: chats would vanish on relaunch.
+            fatalError("Error Opening Store: \(error.localizedDescription)")
+        }
+    }()
+
+    /// A throwaway store for tests and previews; never synced.
+    static func inMemory() -> ModelContainer {
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        return try! ModelContainer(for: schema, configurations: configuration)
+    }
+}

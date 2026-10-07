@@ -59,6 +59,7 @@ struct IconlyIconTests {
         #expect(IconlyIcon.Context.action.points == 24)
         #expect(IconlyIcon.Context.tile.points == 24)
         #expect(IconlyIcon.Context.field.points == 20)
+        #expect(IconlyIcon.Context.menu.points == 20)
         #expect(IconlyIcon.Context.row.points == 16)
         #expect(IconlyIcon.Context.inlineButton.points == 14)
         #expect(IconlyIcon.Context.disclosure.points == 12)

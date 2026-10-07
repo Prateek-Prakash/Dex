@@ -6,16 +6,25 @@
 //
 
 import Foundation
+import SwiftData
 
-/// The open chat. Held in memory only: nothing is saved yet, so every chat
-/// is gone after New Session or a relaunch, incognito or not.
+/// The open chat. `messages` is its working copy; unless incognito, each
+/// message is saved when it is sent and when its reply finishes, never per
+/// streamed token.
 @MainActor
 final class ChatVM: ObservableObject {
     @Published private(set) var messages: [ChatMessage] = []
-    /// Incognito chats are never saved, once saving exists.
+    /// Incognito chats are never saved.
     @Published var isIncognito: Bool = false
+    /// The saved chat on screen; nil until a saved chat's first message.
+    @Published private(set) var chat: Chat?
+    /// Where chats are saved; nil keeps everything in memory (previews).
+    var context: ModelContext?
 
     private var streamTask: Task<Void, Never>?
+    private var titleTask: Task<Void, Never>?
+    /// The saved chat's stored messages, by id.
+    private var records: [UUID: Message] = [:]
 
     var isStreaming: Bool {
         messages.last?.status == .streaming
@@ -40,6 +49,14 @@ final class ChatVM: ObservableObject {
         return total
     }
 
+    /// After every message here and every stored one: another device may
+    /// have added to the chat since it opened, and a repeated number would
+    /// mix the two orders on the next open.
+    private var nextSequence: Int {
+        let stored = chat?.messages?.map(\.sequence) ?? []
+        return ((messages.map(\.sequence) + stored).max() ?? -1) + 1
+    }
+
     /// Whether the last reply can be asked for again.
     var canRetry: Bool {
         guard let last = messages.last else { return false }
@@ -49,14 +66,15 @@ final class ChatVM: ObservableObject {
     func send(_ text: String, client: OllamaClient?, model: OllamaModel?) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isStreaming else { return }
-        messages.append(ChatMessage(role: .user, content: text, sequence: messages.count))
+        messages.append(ChatMessage(role: .user, content: text, sequence: nextSequence))
+        save(messages[messages.count - 1])
         reply(client: client, model: model)
     }
 
     /// Replaces the last failed or stopped reply with a new one.
     func retry(client: OllamaClient?, model: OllamaModel?) {
         guard canRetry else { return }
-        messages.removeLast()
+        forget(messages.removeLast().id)
         reply(client: client, model: model)
     }
 
@@ -67,15 +85,100 @@ final class ChatVM: ObservableObject {
 
     /// A new, empty chat.
     func reset() {
-        streamTask?.cancel()
-        streamTask = nil
-        messages = []
+        leave()
         isIncognito = false
+    }
+
+    /// Puts a saved chat on screen.
+    func open(_ chat: Chat) {
+        guard chat !== self.chat else { return }
+        leave()
+        isIncognito = false
+        self.chat = chat
+        let stored = chat.sortedMessages
+        records = Dictionary(stored.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        messages = stored.map(ChatMessage.init)
+    }
+
+    /// Renames a saved chat. A blank name changes nothing; a rename made
+    /// while the chat is being named wins over the generated name.
+    func rename(_ chat: Chat, to title: String) {
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, title != chat.title else { return }
+        chat.title = title
+        chat.updatedAt = .now
+        commit()
+    }
+
+    /// Deletes a saved chat, and its messages; an empty chat replaces it on screen.
+    func delete(_ chat: Chat) {
+        if chat === self.chat { reset() }
+        context?.delete(chat)
+        commit()
     }
 
     /// Waits for the reply under way, if any. For tests.
     func waitForReply() async {
         await streamTask?.value
+    }
+
+    /// Waits for the chat's naming request, if any. For tests.
+    func waitForTitle() async {
+        await titleTask?.value
+    }
+
+    /// Clears the screen. A reply still streaming stops, and is saved
+    /// stopped with what came so far; its task's own ending then finds
+    /// nothing left to change.
+    private func leave() {
+        if isStreaming, var last = messages.last {
+            last.status = .stopped
+            save(last)
+        }
+        streamTask?.cancel()
+        streamTask = nil
+        messages = []
+        chat = nil
+        records = [:]
+    }
+
+    /// Saves `message` into the open chat, starting the chat with the first
+    /// one. Incognito or without a store, does nothing.
+    private func save(_ message: ChatMessage) {
+        guard let context, !isIncognito else { return }
+        let chat = self.chat ?? {
+            let chat = Chat(title: ChatTitle.fallback(message.content))
+            context.insert(chat)
+            self.chat = chat
+            return chat
+        }()
+        let record = records[message.id] ?? {
+            let record = Message(id: message.id)
+            context.insert(record)
+            record.chat = chat
+            records[message.id] = record
+            return record
+        }()
+        record.update(from: message)
+        if let model = message.model { chat.model = model }
+        chat.updatedAt = .now
+        chat.lastMessageAt = .now
+        commit()
+    }
+
+    /// Deletes a stored message: a reply being asked for again.
+    private func forget(_ id: UUID) {
+        guard let record = records.removeValue(forKey: id) else { return }
+        context?.delete(record)
+        commit()
+    }
+
+    private func commit() {
+        do {
+            try context?.save()
+        } catch {
+            print("Error Saving Chats: \(error.localizedDescription)")
+        }
     }
 
     /// What the model sees: the user's messages and the replies that have
@@ -94,8 +197,10 @@ final class ChatVM: ObservableObject {
 
     private func reply(client: OllamaClient?, model: OllamaModel?) {
         let history = Self.history(messages)
-        let reply = ChatMessage(role: .assistant, sequence: messages.count, model: model?.name, status: .streaming)
+        let reply = ChatMessage(role: .assistant, sequence: nextSequence, model: model?.name, status: .streaming)
         messages.append(reply)
+        // Saved streaming, so a quit mid-reply reopens as stopped and can retry.
+        save(reply)
         guard let client else {
             return finish(reply.id, status: .failed, error: "No server is set. Add one in Settings.")
         }
@@ -151,7 +256,8 @@ final class ChatVM: ObservableObject {
                 if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     return finish(id, status: .failed, error: "No answer came back.")
                 }
-                return finish(id, status: .done)
+                finish(id, status: .done)
+                return name(client: client, request: request)
             } catch OllamaClient.Failure.http(let status, let message)
                         where status == 400 && request.think != nil && message.localizedCaseInsensitiveContains("does not support thinking") {
                 // The model list said it can think; the model disagrees. Ask again without.
@@ -172,6 +278,39 @@ final class ChatVM: ObservableObject {
         update(id) {
             $0.status = status
             $0.error = error
+        }
+        if let message = messages.first(where: { $0.id == id }) { save(message) }
+    }
+
+    /// Names a saved chat after its first reply, with a separate one-off
+    /// request that is never stored as a message. Thinking stays off; the
+    /// window matches the chat's, so the model doesn't reload.
+    private func name(client: OllamaClient, request: OllamaChatRequest) {
+        guard let chat, messages.count == 2, messages[0].role == .user,
+              messages[1].role == .assistant, messages[1].status == .done else { return }
+        let fallback = ChatTitle.fallback(messages[0].content)
+        guard chat.title == fallback else { return }
+        let naming = OllamaChatRequest(
+            model: request.model,
+            messages: [.init(role: "user", content: ChatTitle.prompt(message: messages[0].content, reply: messages[1].content))],
+            // Nil for a model that can't think: it rejects even false.
+            think: request.think == nil ? nil : false
+        )
+        titleTask = Task {
+            var answer = ""
+            do {
+                for try await chunk in client.chat(naming) {
+                    answer += chunk.message?.content ?? ""
+                }
+            } catch {
+                return print("Error Naming Chat: \(error.localizedDescription)")
+            }
+            guard let title = ChatTitle.clean(answer) else { return }
+            // A rename or delete while the request ran wins.
+            guard !chat.isDeleted, chat.modelContext != nil, chat.title == fallback else { return }
+            chat.title = title
+            chat.updatedAt = .now
+            commit()
         }
     }
 

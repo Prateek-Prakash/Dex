@@ -8,7 +8,8 @@ Usage:
 Each file in Tools/iconly-svg is named for its `Iconly` case (e.g. `menu.svg`)
 and is the Light style, regular type: 24x24 viewBox, 1.5 stroke, round caps
 and joins. close, refresh, info, settings and add are Sphinx's glyphs, so the
-two apps draw shared roles identically.
+two apps draw shared roles identically. more is the only filled glyph: More
+Circle's three dots without its circle, for a glass circle button.
 
 Every glyph is normalized so all icons read the same size, in two steps:
 
@@ -42,13 +43,14 @@ LINE = 1.5 * BOX / 19.5
 REFERENCE = ['info']
 
 # Bold (filled) glyphs: no stroke, drawn with an even-odd fill.
-FILLED: set[str] = set()
+FILLED: set[str] = {'more'}
 
 # Display order in the generated enum and the Developer preview.
 ORDER = [
     'menu', 'incognito', 'chevronDown', 'microphone', 'send', 'download',
     'refresh',
     'close', 'info', 'settings', 'add', 'folder', 'chat',
+    'edit', 'delete', 'more',
 ]
 
 
