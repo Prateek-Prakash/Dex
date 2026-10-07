@@ -21,6 +21,8 @@ struct RootView: View {
     
     /// Owned here so the connection survives switching pages.
     @StateObject private var globalVM = GlobalVM()
+    /// Owned here so the chat survives switching pages.
+    @StateObject private var chatVM = ChatVM()
     @State var page: Page = .chat
     @State var isDrawerOpen: Bool = false
     @State var showSettingsView: Bool = false
@@ -63,7 +65,7 @@ struct RootView: View {
                     page: page,
                     select: { show($0) },
                     openSettings: { showSettingsView = true },
-                    newSession: { show(.chat) }
+                    newSession: { newSession() }
                 )
 
                 Group {
@@ -73,10 +75,11 @@ struct RootView: View {
                     case .folders:
                         FoldersView(openDrawer: { setDrawer(open: true) })
                     case .folder(let name):
-                        FolderView(name: name, openDrawer: { setDrawer(open: true) }, newSession: { show(.chat) })
+                        FolderView(name: name, openDrawer: { setDrawer(open: true) }, newSession: { newSession() })
                     }
                 }
                     .environmentObject(globalVM)
+                    .environmentObject(chatVM)
                     .allowsHitTesting(!isDrawerOpen)
                     // Opaque, or the drawer shows through the placeholder.
                     .background(Color.appBackground.ignoresSafeArea())
@@ -168,6 +171,12 @@ struct RootView: View {
         setDrawer(open: false)
     }
     
+    /// An empty chat on the main screen.
+    private func newSession() {
+        chatVM.reset()
+        show(.chat)
+    }
+
     private func setDrawer(open: Bool) {
         if open {
             // The keyboard would otherwise sit over the drawer.

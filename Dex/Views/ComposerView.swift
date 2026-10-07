@@ -7,11 +7,11 @@
 
 import SwiftUI
 
-/// The message box at the bottom of the main screen. A mock until chat
-/// exists: typing works, the picker sets the selected model, the microphone
-/// and Send do nothing.
+/// The message box at the bottom of the main screen: the message, the
+/// model picker, and Send (Stop while a reply streams). The microphone is a mock until dictation exists.
 struct ComposerView: View {
     @EnvironmentObject var globalVM: GlobalVM
+    @EnvironmentObject var chatVM: ChatVM
     
     var isFocused: FocusState<Bool>.Binding
 
@@ -45,28 +45,57 @@ struct ComposerView: View {
                 }
                 Spacer()
                 Button {
-                    // Mock: dictation arrives with chat.
+                    // Mock: dictation comes later.
                 } label: {
                     IconlyIcon(.microphone, .field)
                         .padding(6.0)
                         .background(Color.composerChip, in: Circle())
                 }
                 .buttonStyle(.plain)
-                Button {
-                    // Mock: sending arrives with chat.
-                } label: {
-                    IconlyIcon(.send, .row)
-                        .foregroundStyle(Color.appBackground)
-                        .padding(8.0)
-                        .background(Color.primary.opacity(message.isEmpty ? 0.3 : 1.0), in: Circle())
+                if chatVM.isStreaming {
+                    Button {
+                        chatVM.stop()
+                    } label: {
+                        // A plain square, like Claude's Stop; drawn, not an icon.
+                        RoundedRectangle(cornerRadius: 3.0, style: .continuous)
+                            .fill(Color.appBackground)
+                            .frame(width: 12.0, height: 12.0)
+                            .frame(width: 16.0, height: 16.0)
+                            .padding(8.0)
+                            .background(Color.primary, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Stop")
+                } else {
+                    Button {
+                        send()
+                    } label: {
+                        IconlyIcon(.send, .row)
+                            .foregroundStyle(Color.appBackground)
+                            .padding(8.0)
+                            .background(Color.primary.opacity(canSend ? 1.0 : 0.3), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
+                    .accessibilityLabel("Send")
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(16.0)
         .glassRoundedRect(cornerRadius: 28.0)
         .padding(.horizontal, 12.0)
         .padding(.bottom, 8.0)
+        .sensoryFeedback(.impact(weight: .light), trigger: chatVM.messages.count)
+    }
+
+    private var canSend: Bool {
+        !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && globalVM.pickedModel != nil
+    }
+
+    private func send() {
+        guard canSend else { return }
+        chatVM.send(message, client: globalVM.client, model: globalVM.pickedModel)
+        message = ""
     }
 }
 
@@ -74,4 +103,5 @@ struct ComposerView: View {
     @Previewable @FocusState var isFocused: Bool
     ComposerView(isFocused: $isFocused)
         .environmentObject(GlobalVM())
+        .environmentObject(ChatVM())
 }

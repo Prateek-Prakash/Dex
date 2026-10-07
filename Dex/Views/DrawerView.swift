@@ -19,7 +19,7 @@ struct DrawerView: View {
     var select: (RootView.Page) -> Void = { _ in }
     /// Opens Settings.
     var openSettings: () -> Void = {}
-    /// Mock until chat exists: closes the drawer onto the empty main screen.
+    /// Starts an empty chat and closes the drawer onto it.
     var newSession: () -> Void = {}
     
     /// The pinned or recent row that is highlighted; nil for the Folders

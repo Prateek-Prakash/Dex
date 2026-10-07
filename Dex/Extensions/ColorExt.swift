@@ -14,6 +14,10 @@ extension Color {
     /// The message box's model pill and microphone circle, measured from Claude's.
     static let composerChip = Color(light: 0xF0EFEC, dark: 0x434343)
     
+    /// The context ring's fill and track, measured from Claude's.
+    static let contextRing = Color(light: 0x3162B8, dark: 0x88C2FA)
+    static let contextTrack = Color(light: 0xC8C8C6, dark: 0x686868)
+
     /// The drawer's background, measured from Claude's.
     static let drawerBackground = Color(light: 0xF3F3F0, dark: 0x101010)
 

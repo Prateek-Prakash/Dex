@@ -31,7 +31,8 @@ final class GlobalVM: ObservableObject {
         models.first { $0.name == name }
     }
     
-    private var client: OllamaClient?
+    /// The connection to the server, once its address is valid.
+    private(set) var client: OllamaClient?
     private var connectTask: Task<Void, Never>?
     /// Running pulls by model name. Each belongs to the client it started on.
     private var pullTasks: [String: Task<Void, Never>] = [:]

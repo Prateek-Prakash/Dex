@@ -48,6 +48,62 @@ struct OllamaPullProgress: Decodable, Sendable {
     let error: String?
 }
 
+/// A `/api/chat` request. Every request asks for the same window: a
+/// different `num_ctx` makes Ollama reload the model.
+struct OllamaChatRequest: Encodable, Sendable {
+    static let contextLength = 65_536
+
+    struct Message: Encodable, Sendable, Equatable {
+        let role: String
+        let content: String
+    }
+
+    struct Options: Encodable, Sendable {
+        var numCtx = OllamaChatRequest.contextLength
+
+        enum CodingKeys: String, CodingKey {
+            case numCtx = "num_ctx"
+        }
+    }
+
+    let model: String
+    var messages: [Message]
+    /// Nil leaves the setting out: a model that can't think rejects even `false`.
+    var think: Bool?
+    var stream = true
+    /// How long the server keeps the model loaded after the last request.
+    var keepAlive = "30m"
+    var options = Options()
+
+    enum CodingKeys: String, CodingKey {
+        case model, messages, think, stream, options
+        case keepAlive = "keep_alive"
+    }
+}
+
+/// One line of a `/api/chat` stream.
+struct OllamaChatChunk: Decodable, Sendable {
+    struct Message: Decodable, Sendable {
+        let content: String?
+        let thinking: String?
+    }
+
+    let message: Message?
+    let done: Bool?
+    /// Why the model stopped, on the final line: "stop", "length" and so on.
+    let doneReason: String?
+    let promptEvalCount: Int?
+    let evalCount: Int?
+    let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case message, done, error
+        case doneReason = "done_reason"
+        case promptEvalCount = "prompt_eval_count"
+        case evalCount = "eval_count"
+    }
+}
+
 /// A thin `URLSession` client for the parts of the Ollama API Dex uses.
 /// Every request carries `headers`, so a server behind Cloudflare Access works.
 struct OllamaClient: Sendable {
@@ -144,7 +200,40 @@ struct OllamaClient: Sendable {
         }
     }
 
-    private func request(path: String, method: String = "GET", body: [String: String]? = nil,
+    /// The reply, one line at a time. Whether it finished is the caller's
+    /// call: a dropped connection ends the stream cleanly too.
+    func chat(_ body: OllamaChatRequest) -> AsyncThrowingStream<OllamaChatChunk, Error> {
+        // Waits up to two minutes between bytes: a model still loading sends
+        // nothing until it is ready.
+        let request = request(path: "api/chat", method: "POST", body: body, timeout: 120)
+        let session = session
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let (bytes, response) = try await session.bytes(for: request)
+                    let http = response as? HTTPURLResponse
+                    let status = http?.statusCode ?? 0
+                    guard status == 200 else {
+                        var data = Data()
+                        for try await byte in bytes { data.append(byte) }
+                        throw Self.failure(status: status, data: data)
+                    }
+                    if Self.isHTML(http) { throw Failure.accessDenied }
+                    for try await line in bytes.lines {
+                        guard let chunk = try? JSONDecoder().decode(OllamaChatChunk.self, from: Data(line.utf8)) else { continue }
+                        if let error = chunk.error { throw Failure.stream(error) }
+                        continuation.yield(chunk)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private func request(path: String, method: String = "GET", body: (any Encodable)? = nil,
                          timeout: TimeInterval = 15) -> URLRequest {
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
         request.httpMethod = method

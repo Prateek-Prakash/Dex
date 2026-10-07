@@ -59,182 +59,190 @@ final class OllamaStubProtocol: URLProtocol {
     }
 }
 
+/// Every suite that answers requests through `OllamaStubProtocol`. Its
+/// handler is one static, so these suites must not run alongside each other;
+/// `.serialized` on a parent covers every suite nested in it.
 @Suite(.serialized)
-struct OllamaClientTests {
-    @Test(arguments: [
-        ("https://ollama.teek.dev", "https://ollama.teek.dev"),
-        ("ollama.teek.dev/", "https://ollama.teek.dev"),
-        ("  http://192.168.1.5:11434  ", "http://192.168.1.5:11434"),
-        ("HTTP://host:11434//", "HTTP://host:11434"),
-    ])
-    func serverURLAcceptsServerRoots(_ text: String, _ expected: String) {
-        #expect(OllamaClient.serverURL(from: text)?.absoluteString == expected)
-    }
+enum StubbedNetworkTests {}
 
-    @Test(arguments: ["", "   ", "ftp://host", "http://", "https:///api"])
-    func serverURLRejectsOthers(_ text: String) {
-        #expect(OllamaClient.serverURL(from: text) == nil)
-    }
-
-    @Test func accessHeadersNeedBothHalves() {
-        #expect(OllamaClient.accessHeaders(id: "id", secret: "secret")
-                == ["CF-Access-Client-Id": "id", "CF-Access-Client-Secret": "secret"])
-        #expect(OllamaClient.accessHeaders(id: "id", secret: "").isEmpty)
-        #expect(OllamaClient.accessHeaders(id: nil, secret: "secret").isEmpty)
-    }
-
-    @Test func requestsCarryHeaders() async throws {
-        let client = OllamaStubProtocol.client(headers: ["CF-Access-Client-Id": "id"]) { _ in
-            .init(body: #"{"version":"0.35.1"}"#)
+extension StubbedNetworkTests {
+    @Suite(.serialized)
+    struct OllamaClientTests {
+        @Test(arguments: [
+            ("https://ollama.teek.dev", "https://ollama.teek.dev"),
+            ("ollama.teek.dev/", "https://ollama.teek.dev"),
+            ("  http://192.168.1.5:11434  ", "http://192.168.1.5:11434"),
+            ("HTTP://host:11434//", "HTTP://host:11434"),
+        ])
+        func serverURLAcceptsServerRoots(_ text: String, _ expected: String) {
+            #expect(OllamaClient.serverURL(from: text)?.absoluteString == expected)
         }
-        #expect(try await client.version() == "0.35.1")
-        #expect(OllamaStubProtocol.requests.first?.value(forHTTPHeaderField: "CF-Access-Client-Id") == "id")
-        #expect(OllamaStubProtocol.requests.first?.url?.path == "/api/version")
-    }
 
-    @Test func modelsDecodeAndSort() async throws {
-        let client = OllamaStubProtocol.client { _ in
-            .init(body: """
-            {"models":[
-              {"name":"qwen3.5:9b","model":"qwen3.5:9b","modified_at":"2026-10-06T01:02:03.123456789-07:00",
-               "size":6600000000,"digest":"abcdef0123456789","capabilities":["completion","tools","thinking"],
-               "details":{"parent_model":"","format":"gguf","family":"qwen3","families":["qwen3"],
-                          "parameter_size":"9B","quantization_level":"Q4_K_M"}},
-              {"name":"gemma4:12b","size":8100000000,"digest":"0123","details":{}},
-              {"name":"gemma4:2b","size":1,"digest":"4567","details":{"family":"gemma4"},"remote_model":"x"}
-            ]}
-            """)
+        @Test(arguments: ["", "   ", "ftp://host", "http://", "https:///api"])
+        func serverURLRejectsOthers(_ text: String) {
+            #expect(OllamaClient.serverURL(from: text) == nil)
         }
-        let models = try await client.models()
-        #expect(models.map(\.name) == ["gemma4:2b", "gemma4:12b", "qwen3.5:9b"])
-        #expect(models[2].details.quantizationLevel == "Q4_K_M")
-        #expect(models[2].capabilities == ["completion", "tools", "thinking"])
-        #expect(models[1].details.format == nil)
-    }
 
-    @Test(arguments: [
-        ("gemma4:12b", "gemma4", "12b"),
-        ("gemma4", "gemma4", "latest"),
-        ("hf.co/user/model:Q4_K_M", "hf.co/user/model", "Q4_K_M"),
-    ])
-    func modelNameParts(_ name: String, _ baseName: String, _ tag: String) {
-        let model = OllamaModel(name: name, size: 0, digest: "", details: .init(format: nil, family: nil, parameterSize: nil, quantizationLevel: nil), capabilities: nil)
-        #expect(model.baseName == baseName)
-        #expect(model.tag == tag)
-    }
+        @Test func accessHeadersNeedBothHalves() {
+            #expect(OllamaClient.accessHeaders(id: "id", secret: "secret")
+                    == ["CF-Access-Client-Id": "id", "CF-Access-Client-Secret": "secret"])
+            #expect(OllamaClient.accessHeaders(id: "id", secret: "").isEmpty)
+            #expect(OllamaClient.accessHeaders(id: nil, secret: "secret").isEmpty)
+        }
 
-    @Test func pickedModelOnlyWhenTheServerHasIt() {
-        let models = ["gemma4:12b", "qwen3.5:9b"].map {
-            OllamaModel(name: $0, size: 0, digest: "", details: .init(format: nil, family: nil, parameterSize: nil, quantizationLevel: nil), capabilities: nil)
+        @Test func requestsCarryHeaders() async throws {
+            let client = OllamaStubProtocol.client(headers: ["CF-Access-Client-Id": "id"]) { _ in
+                .init(body: #"{"version":"0.35.1"}"#)
+            }
+            #expect(try await client.version() == "0.35.1")
+            #expect(OllamaStubProtocol.requests.first?.value(forHTTPHeaderField: "CF-Access-Client-Id") == "id")
+            #expect(OllamaStubProtocol.requests.first?.url?.path == "/api/version")
         }
-        #expect(GlobalVM.pickedModel(named: "qwen3.5:9b", in: models)?.name == "qwen3.5:9b")
-        #expect(GlobalVM.pickedModel(named: "llama3:8b", in: models) == nil)
-        #expect(GlobalVM.pickedModel(named: "--", in: models) == nil)
-        #expect(GlobalVM.pickedModel(named: "gemma4:12b", in: []) == nil)
-    }
 
-    @Test func accessRefusalReadsAsAccessDenied() async {
-        let client = OllamaStubProtocol.client { _ in
-            .init(status: 403, contentType: "text/html", body: "<!DOCTYPE html><html>Forbidden</html>")
+        @Test func modelsDecodeAndSort() async throws {
+            let client = OllamaStubProtocol.client { _ in
+                .init(body: """
+                {"models":[
+                  {"name":"qwen3.5:9b","model":"qwen3.5:9b","modified_at":"2026-10-06T01:02:03.123456789-07:00",
+                   "size":6600000000,"digest":"abcdef0123456789","capabilities":["completion","tools","thinking"],
+                   "details":{"parent_model":"","format":"gguf","family":"qwen3","families":["qwen3"],
+                              "parameter_size":"9B","quantization_level":"Q4_K_M"}},
+                  {"name":"gemma4:12b","size":8100000000,"digest":"0123","details":{}},
+                  {"name":"gemma4:2b","size":1,"digest":"4567","details":{"family":"gemma4"},"remote_model":"x"}
+                ]}
+                """)
+            }
+            let models = try await client.models()
+            #expect(models.map(\.name) == ["gemma4:2b", "gemma4:12b", "qwen3.5:9b"])
+            #expect(models[2].details.quantizationLevel == "Q4_K_M")
+            #expect(models[2].capabilities == ["completion", "tools", "thinking"])
+            #expect(models[1].details.format == nil)
         }
-        await #expect {
-            try await client.version()
-        } throws: { error in
-            if case .accessDenied = error as? OllamaClient.Failure { return true }
-            return false
-        }
-    }
 
-    @Test func loginPageBehindRedirectReadsAsAccessDenied() async {
-        let client = OllamaStubProtocol.client { _ in
-            .init(status: 200, contentType: "text/html; charset=utf-8", body: "<html>Sign in</html>")
+        @Test(arguments: [
+            ("gemma4:12b", "gemma4", "12b"),
+            ("gemma4", "gemma4", "latest"),
+            ("hf.co/user/model:Q4_K_M", "hf.co/user/model", "Q4_K_M"),
+        ])
+        func modelNameParts(_ name: String, _ baseName: String, _ tag: String) {
+            let model = OllamaModel(name: name, size: 0, digest: "", details: .init(format: nil, family: nil, parameterSize: nil, quantizationLevel: nil), capabilities: nil)
+            #expect(model.baseName == baseName)
+            #expect(model.tag == tag)
         }
-        await #expect {
-            try await client.models()
-        } throws: { error in
-            if case .accessDenied = error as? OllamaClient.Failure { return true }
-            return false
-        }
-    }
 
-    @Test func ollamaErrorKeepsItsMessage() async {
-        let client = OllamaStubProtocol.client { _ in
-            .init(status: 404, body: #"{"error":"model 'nope' not found"}"#)
+        @Test func pickedModelOnlyWhenTheServerHasIt() {
+            let models = ["gemma4:12b", "qwen3.5:9b"].map {
+                OllamaModel(name: $0, size: 0, digest: "", details: .init(format: nil, family: nil, parameterSize: nil, quantizationLevel: nil), capabilities: nil)
+            }
+            #expect(GlobalVM.pickedModel(named: "qwen3.5:9b", in: models)?.name == "qwen3.5:9b")
+            #expect(GlobalVM.pickedModel(named: "llama3:8b", in: models) == nil)
+            #expect(GlobalVM.pickedModel(named: "--", in: models) == nil)
+            #expect(GlobalVM.pickedModel(named: "gemma4:12b", in: []) == nil)
         }
-        await #expect {
-            try await client.delete(model: "nope")
-        } throws: { error in
-            error.localizedDescription == "HTTP 404: model 'nope' not found"
-        }
-    }
 
-    @Test func deleteSendsModelName() async throws {
-        let client = OllamaStubProtocol.client { _ in .init() }
-        try await client.delete(model: "gemma4:12b")
-        let request = try #require(OllamaStubProtocol.requests.first)
-        #expect(request.httpMethod == "DELETE")
-        #expect(request.url?.path == "/api/delete")
-        let body = try JSONDecoder().decode([String: String].self, from: request.httpBody ?? Data())
-        #expect(body == ["model": "gemma4:12b"])
-    }
-
-    @Test func pullStreamsProgress() async throws {
-        let client = OllamaStubProtocol.client { _ in
-            .init(contentType: "application/x-ndjson", body: """
-            {"status":"pulling manifest"}
-            {"status":"pulling abc","digest":"abc","total":200,"completed":50}
-            {"status":"success"}
-
-            """)
+        @Test func accessRefusalReadsAsAccessDenied() async {
+            let client = OllamaStubProtocol.client { _ in
+                .init(status: 403, contentType: "text/html", body: "<!DOCTYPE html><html>Forbidden</html>")
+            }
+            await #expect {
+                try await client.version()
+            } throws: { error in
+                if case .accessDenied = error as? OllamaClient.Failure { return true }
+                return false
+            }
         }
-        var statuses: [String] = []
-        for try await progress in client.pull(model: "gemma4:12b") {
-            statuses.append(progress.status ?? "")
-        }
-        #expect(statuses == ["pulling manifest", "pulling abc", "success"])
-        let body = try JSONDecoder().decode([String: String].self, from: OllamaStubProtocol.requests.first?.httpBody ?? Data())
-        #expect(body == ["model": "gemma4:12b"])
-    }
 
-    @Test func pullStopsOnStreamedError() async {
-        let client = OllamaStubProtocol.client { _ in
-            .init(contentType: "application/x-ndjson", body: """
-            {"status":"pulling manifest"}
-            {"error":"pull model manifest: file does not exist"}
+        @Test func loginPageBehindRedirectReadsAsAccessDenied() async {
+            let client = OllamaStubProtocol.client { _ in
+                .init(status: 200, contentType: "text/html; charset=utf-8", body: "<html>Sign in</html>")
+            }
+            await #expect {
+                try await client.models()
+            } throws: { error in
+                if case .accessDenied = error as? OllamaClient.Failure { return true }
+                return false
+            }
+        }
 
-            """)
+        @Test func ollamaErrorKeepsItsMessage() async {
+            let client = OllamaStubProtocol.client { _ in
+                .init(status: 404, body: #"{"error":"model 'nope' not found"}"#)
+            }
+            await #expect {
+                try await client.delete(model: "nope")
+            } throws: { error in
+                error.localizedDescription == "HTTP 404: model 'nope' not found"
+            }
         }
-        await #expect {
-            for try await _ in client.pull(model: "nope") {}
-        } throws: { error in
-            error.localizedDescription == "pull model manifest: file does not exist"
-        }
-    }
 
-    @Test func pullCutShortFails() async {
-        let client = OllamaStubProtocol.client { _ in
-            .init(contentType: "application/x-ndjson", body: """
-            {"status":"pulling manifest"}
-            {"status":"pulling abc","digest":"abc","total":200,"completed":50}
+        @Test func deleteSendsModelName() async throws {
+            let client = OllamaStubProtocol.client { _ in .init() }
+            try await client.delete(model: "gemma4:12b")
+            let request = try #require(OllamaStubProtocol.requests.first)
+            #expect(request.httpMethod == "DELETE")
+            #expect(request.url?.path == "/api/delete")
+            let body = try JSONDecoder().decode([String: String].self, from: request.httpBody ?? Data())
+            #expect(body == ["model": "gemma4:12b"])
+        }
 
-            """)
-        }
-        await #expect {
-            for try await _ in client.pull(model: "gemma4:12b") {}
-        } throws: { error in
-            error.localizedDescription == "Pull ended before it finished"
-        }
-    }
+        @Test func pullStreamsProgress() async throws {
+            let client = OllamaStubProtocol.client { _ in
+                .init(contentType: "application/x-ndjson", body: """
+                {"status":"pulling manifest"}
+                {"status":"pulling abc","digest":"abc","total":200,"completed":50}
+                {"status":"success"}
 
-    @Test func pullRefusedByAccess() async {
-        let client = OllamaStubProtocol.client { _ in
-            .init(status: 403, contentType: "text/html", body: "<html></html>")
+                """)
+            }
+            var statuses: [String] = []
+            for try await progress in client.pull(model: "gemma4:12b") {
+                statuses.append(progress.status ?? "")
+            }
+            #expect(statuses == ["pulling manifest", "pulling abc", "success"])
+            let body = try JSONDecoder().decode([String: String].self, from: OllamaStubProtocol.requests.first?.httpBody ?? Data())
+            #expect(body == ["model": "gemma4:12b"])
         }
-        await #expect {
-            for try await _ in client.pull(model: "gemma4:12b") {}
-        } throws: { error in
-            if case .accessDenied = error as? OllamaClient.Failure { return true }
-            return false
+
+        @Test func pullStopsOnStreamedError() async {
+            let client = OllamaStubProtocol.client { _ in
+                .init(contentType: "application/x-ndjson", body: """
+                {"status":"pulling manifest"}
+                {"error":"pull model manifest: file does not exist"}
+
+                """)
+            }
+            await #expect {
+                for try await _ in client.pull(model: "nope") {}
+            } throws: { error in
+                error.localizedDescription == "pull model manifest: file does not exist"
+            }
+        }
+
+        @Test func pullCutShortFails() async {
+            let client = OllamaStubProtocol.client { _ in
+                .init(contentType: "application/x-ndjson", body: """
+                {"status":"pulling manifest"}
+                {"status":"pulling abc","digest":"abc","total":200,"completed":50}
+
+                """)
+            }
+            await #expect {
+                for try await _ in client.pull(model: "gemma4:12b") {}
+            } throws: { error in
+                error.localizedDescription == "Pull ended before it finished"
+            }
+        }
+
+        @Test func pullRefusedByAccess() async {
+            let client = OllamaStubProtocol.client { _ in
+                .init(status: 403, contentType: "text/html", body: "<html></html>")
+            }
+            await #expect {
+                for try await _ in client.pull(model: "gemma4:12b") {}
+            } throws: { error in
+                if case .accessDenied = error as? OllamaClient.Failure { return true }
+                return false
+            }
         }
     }
 }

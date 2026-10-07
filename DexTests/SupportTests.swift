@@ -61,4 +61,13 @@ struct SupportTests {
         #expect(Int((b * 255).rounded()) == 0x1A)
         #expect(a == 1)
     }
+
+    // The context ring warns in two steps: orange past 80%, red past 95%.
+    @Test(arguments: [
+        (0.0, ContextMeter.Level.normal), (0.8, .normal), (0.81, .warning),
+        (0.95, .warning), (0.951, .critical), (1.0, .critical),
+    ])
+    func contextMeterLevel(_ share: Double, _ expected: ContextMeter.Level) {
+        #expect(ContextMeter.level(share) == expected)
+    }
 }
