@@ -10,6 +10,12 @@ import SwiftUI
 
 @main
 struct DexApp: App {
+    init() {
+        // iOS's default category can't mix: the first haptic would pause
+        // other apps' audio. Only dictation takes it over.
+        Dictation.useAmbientAudio()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()

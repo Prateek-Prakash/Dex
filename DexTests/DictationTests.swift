@@ -5,6 +5,7 @@
 //  Created by Prateek Prakash on 10/7/26.
 //
 
+import AVFoundation
 import SwiftUI
 import Testing
 @testable import Dex
@@ -31,6 +32,19 @@ struct DictationTests {
     }
 
     // Claude's measurements: 3pt bars on a 6pt pitch, 3pt dots up to 36pt.
+    /// Dex's audio mixes with other apps' except while recording; stopping
+    /// a dictation that never started leaves the session alone.
+    @Test @MainActor func audioIsAmbientAndIdleStopLeavesItAlone() throws {
+        let session = AVAudioSession.sharedInstance()
+        Dictation.useAmbientAudio()
+        #expect(session.category == .ambient)
+        try session.setCategory(.playback)
+        Dictation().stop()
+        #expect(session.category == .playback)
+        Dictation.useAmbientAudio()
+        #expect(session.category == .ambient)
+    }
+
     @Test func barsEnterFromTheRightNewestFirst() {
         #expect(WaveformView.bars(levels: [], width: 30, progress: 0).isEmpty)
         let bars = WaveformView.bars(levels: [0.0, 0.25, 1.0], width: 30, progress: 0)

@@ -49,8 +49,18 @@ final class Dictation: ObservableObject {
     private var taskStarted = Date()
     private var meterTimer: Timer?
     private var observers: [NSObjectProtocol] = []
+    /// True from taking the audio session until giving it back; stopping
+    /// touches the microphone and session only then.
+    private var holdsAudio = false
 
     var isActive: Bool { state != .idle }
+
+    /// Dex's audio outside a recording: mixes with other apps, so a haptic
+    /// or anything else of Dex's never pauses what they're playing. Set at
+    /// launch and again after every recording.
+    nonisolated static func useAmbientAudio() {
+        try? AVAudioSession.sharedInstance().setCategory(.ambient)
+    }
 
     func start() async {
         guard state == .idle else { return }
@@ -86,6 +96,8 @@ final class Dictation: ObservableObject {
         self.recognizer = recognizer
         do {
             let session = AVAudioSession.sharedInstance()
+            holdsAudio = true
+            // Recording pauses other apps' audio; it resumes when we let go.
             try session.setCategory(.record, mode: .measurement, options: .duckOthers)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
             let input = engine.inputNode
@@ -138,12 +150,18 @@ final class Dictation: ObservableObject {
         observers = []
         meterTimer?.invalidate()
         meterTimer = nil
-        if engine.isRunning { engine.stop() }
-        engine.inputNode.removeTap(onBus: 0)
         sink.setRequest(nil)
         task?.cancel()
         task = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // Never started: the microphone and session were never touched, and
+        // touching them now would interrupt other apps' audio.
+        if holdsAudio {
+            holdsAudio = false
+            if engine.isRunning { engine.stop() }
+            engine.inputNode.removeTap(onBus: 0)
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            Self.useAmbientAudio()
+        }
         state = .idle
     }
 
