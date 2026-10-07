@@ -117,6 +117,14 @@ final class ChatVM: ObservableObject {
         commit()
     }
 
+    /// Deletes a folder and every chat in it; if one of them is on screen,
+    /// an empty chat replaces it.
+    func delete(_ folder: Folder) {
+        if let chat, chat.folder === folder { reset() }
+        context?.delete(folder)
+        commit()
+    }
+
     /// Waits for the reply under way, if any. For tests.
     func waitForReply() async {
         await streamTask?.value

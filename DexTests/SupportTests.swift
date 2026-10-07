@@ -53,6 +53,12 @@ struct SupportTests {
         #expect(RootView.settlesOpen(wasOpen: wasOpen, travel: travel, threshold: 0.35) == open)
     }
 
+    @Test func edgeSwipeGoesBackOnlyWithABackButton() {
+        #expect(RootView.edgeSwipeGoesBack(canGoBack: true, isDrawerOpen: false))
+        #expect(!RootView.edgeSwipeGoesBack(canGoBack: false, isDrawerOpen: false))
+        #expect(!RootView.edgeSwipeGoesBack(canGoBack: true, isDrawerOpen: true))
+    }
+
     @Test func hexColorsParse() {
         var (r, g, b, a): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
         UIColor(rgb: 0xF3E21A).getRed(&r, green: &g, blue: &b, alpha: &a)

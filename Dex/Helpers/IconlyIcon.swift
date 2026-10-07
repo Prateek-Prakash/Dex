@@ -89,7 +89,7 @@ extension IconlyIcon {
         case tile         // 24: drawer rows (Folders, chats)
         case field        // 20: composer microphone
         case menu         // 20: menu item icons (drawn as images)
-        case row          // 16: composer send arrow, pill button plus
+        case row          // 16: composer send arrow, pill button plus, folder tiles
         case inlineButton // 14: retry / dismiss on a failed pull
         case disclosure   // 12: model picker chevron
         case custom(CGFloat)

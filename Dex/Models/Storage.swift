@@ -27,6 +27,79 @@ final class Folder {
     init(name: String) {
         self.name = name
     }
+
+    /// The Folders page's order: newest first.
+    static let newestFirst = [SortDescriptor(\Folder.createdAt, order: .reverse)]
+
+    enum Creation {
+        case created(Folder)
+        /// Nothing but spaces; nothing saved.
+        case blank
+        /// Another folder has this name, trimmed, ignoring case; nothing saved.
+        case taken(String)
+    }
+
+    /// Saves a new folder named `name`, trimmed. Names are unique, ignoring
+    /// case. CloudKit can't enforce that, so two devices creating one name
+    /// at the same moment can still both keep theirs.
+    static func create(named name: String, in context: ModelContext) -> Creation {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return .blank }
+        let existing = (try? context.fetch(FetchDescriptor<Folder>())) ?? []
+        if existing.contains(where: { isSame($0.name, name) }) {
+            return .taken(name)
+        }
+        let folder = Folder(name: name)
+        context.insert(folder)
+        do {
+            try context.save()
+        } catch {
+            print("Error Saving Folder: \(error.localizedDescription)")
+        }
+        return .created(folder)
+    }
+
+    enum Renaming {
+        case renamed
+        /// Blank or the same name; nothing changed.
+        case unchanged
+        /// Another folder has this name; nothing changed.
+        case taken(String)
+    }
+
+    /// Renames to `name`, trimmed, under the same rule as creating: no other
+    /// folder may have it, ignoring case. Changing only the case is fine.
+    static func rename(_ folder: Folder, to name: String, in context: ModelContext) -> Renaming {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != folder.name else { return .unchanged }
+        let others = ((try? context.fetch(FetchDescriptor<Folder>())) ?? []).filter { $0 !== folder }
+        if others.contains(where: { isSame($0.name, name) }) {
+            return .taken(name)
+        }
+        folder.name = name
+        folder.updatedAt = .now
+        do {
+            try context.save()
+        } catch {
+            print("Error Saving Folder: \(error.localizedDescription)")
+        }
+        return .renamed
+    }
+
+    /// The Delete Folder dialog's count line.
+    static func chatCount(_ count: Int) -> String {
+        switch count {
+        case 0: "No Chats"
+        case 1: "1 Chat"
+        default: "\(count) Chats"
+        }
+    }
+
+    /// Whether two folder names count as the same: trimmed, ignoring case.
+    static func isSame(_ a: String, _ b: String) -> Bool {
+        a.trimmingCharacters(in: .whitespacesAndNewlines)
+            .caseInsensitiveCompare(b.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+    }
 }
 
 /// A saved chat. Incognito chats never become one.

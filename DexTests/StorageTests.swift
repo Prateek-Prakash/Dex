@@ -240,3 +240,110 @@ extension StubbedNetworkTests {
         }
     }
 }
+
+/// Folders: creating one, unique names, the Folders page's order.
+@MainActor
+struct FolderTests {
+    private static func folders(_ context: ModelContext) throws -> [Folder] {
+        try context.fetch(FetchDescriptor<Folder>(sortBy: Folder.newestFirst))
+    }
+
+    @Test func createTrimsTheName() throws {
+        let context = ModelContext(Storage.inMemory())
+        guard case .created(let folder) = Folder.create(named: "  Home Lab \n", in: context) else {
+            Issue.record("not created"); return
+        }
+        #expect(folder.name == "Home Lab")
+        #expect(try Self.folders(context).map(\.name) == ["Home Lab"])
+    }
+
+    @Test func blankNameSavesNothing() throws {
+        let context = ModelContext(Storage.inMemory())
+        guard case .blank = Folder.create(named: "   ", in: context) else {
+            Issue.record("not blank"); return
+        }
+        #expect(try Self.folders(context).isEmpty)
+    }
+
+    @Test func takenNameIgnoringCaseAndSpacesSavesNothing() throws {
+        let context = ModelContext(Storage.inMemory())
+        _ = Folder.create(named: "Home Lab", in: context)
+        guard case .taken(let name) = Folder.create(named: " home LAB ", in: context) else {
+            Issue.record("not refused"); return
+        }
+        #expect(name == "home LAB")
+        #expect(try Self.folders(context).count == 1)
+        // A different name is fine.
+        guard case .created = Folder.create(named: "Home Lab 2", in: context) else {
+            Issue.record("not created"); return
+        }
+        #expect(try Self.folders(context).count == 2)
+    }
+
+    @Test func foldersListNewestFirst() throws {
+        let context = ModelContext(Storage.inMemory())
+        _ = Folder.create(named: "Old", in: context)
+        guard case .created(let newer) = Folder.create(named: "New", in: context) else {
+            Issue.record("not created"); return
+        }
+        newer.createdAt = Date().addingTimeInterval(60)
+        #expect(try Self.folders(context).map(\.name) == ["New", "Old"])
+    }
+}
+
+/// Renaming and deleting folders.
+@MainActor
+struct FolderActionTests {
+    @Test func renameFollowsTheUniqueRule() throws {
+        let context = ModelContext(Storage.inMemory())
+        guard case .created(let lab) = Folder.create(named: "Home Lab", in: context),
+              case .created = Folder.create(named: "Recipes", in: context) else {
+            Issue.record("not created"); return
+        }
+        guard case .taken(let name) = Folder.rename(lab, to: " recipes ", in: context) else {
+            Issue.record("not refused"); return
+        }
+        #expect(name == "recipes")
+        #expect(lab.name == "Home Lab")
+        guard case .unchanged = Folder.rename(lab, to: "   ", in: context),
+              case .unchanged = Folder.rename(lab, to: "Home Lab", in: context) else {
+            Issue.record("changed"); return
+        }
+        // Only the case changing is fine: the folder it matches is itself.
+        guard case .renamed = Folder.rename(lab, to: "home lab", in: context) else {
+            Issue.record("not renamed"); return
+        }
+        #expect(lab.name == "home lab")
+        guard case .renamed = Folder.rename(lab, to: "  Servers ", in: context) else {
+            Issue.record("not renamed"); return
+        }
+        #expect(lab.name == "Servers")
+    }
+
+    @Test func chatCountLine() {
+        #expect(Folder.chatCount(0) == "No Chats")
+        #expect(Folder.chatCount(1) == "1 Chat")
+        #expect(Folder.chatCount(7) == "7 Chats")
+    }
+
+    @Test func deletingAFolderDeletesItsChatsAndClearsTheScreen() throws {
+        let context = ModelContext(Storage.inMemory())
+        guard case .created(let folder) = Folder.create(named: "Lab", in: context) else {
+            Issue.record("not created"); return
+        }
+        let inside = Chat(title: "Inside")
+        let outside = Chat(title: "Outside")
+        context.insert(inside)
+        context.insert(outside)
+        inside.folder = folder
+        try context.save()
+
+        let vm = ChatVM()
+        vm.context = context
+        vm.open(inside)
+        vm.delete(folder)
+        #expect(vm.chat == nil)
+        #expect(try context.fetch(FetchDescriptor<Folder>()).isEmpty)
+        #expect(try context.fetch(FetchDescriptor<Chat>()).map(\.title) == ["Outside"])
+    }
+}

@@ -134,7 +134,7 @@ struct DrawerView: View {
             if item.kind == .folder {
                 row(item.icon, item.title, isSelected: selectedItem == item) {
                     selectedItem = item
-                    select(.folder(item.title))
+                    if let id = UUID(uuidString: item.id) { select(.folder(id)) }
                 }
             } else if let chat = chats.first(where: { $0.id.uuidString == item.id }) {
                 row(item.icon, item.title, isSelected: page == .chat && chat.id == currentChatID) {
@@ -142,7 +142,7 @@ struct DrawerView: View {
                     openChat(chat)
                 }
                 .contextMenu {
-                    ChatActions(rename: { chatToRename = chat }, delete: { chatToDelete = chat })
+                    RenameDeleteActions(rename: { chatToRename = chat }, delete: { chatToDelete = chat })
                 }
             }
         }

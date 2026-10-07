@@ -7,9 +7,9 @@
 
 import SwiftUI
 
-/// A saved chat's actions: the drawer row's long-press menu and the open
-/// chat's ⋯ menu list the same ones.
-struct ChatActions: View {
+/// Rename and Delete, with their icons: a saved chat's long-press and ⋯
+/// menus, and a folder's ⋯ menu.
+struct RenameDeleteActions: View {
     let rename: () -> Void
     let delete: () -> Void
 
@@ -20,6 +20,20 @@ struct ChatActions: View {
         Button(role: .destructive, action: delete) {
             Label { Text("Delete") } icon: { Iconly.delete.image(.menu, tint: .systemRed) }
         }
+    }
+}
+
+/// The ⋯ menu button's icon. The toolbar redraws a Menu's label as a
+/// template in its own tint, ignoring the color set on it, so the glyph is
+/// an image with the label color baked in (black in light mode, white in
+/// dark), like Delete's red. Redrawn when the appearance changes, since a
+/// baked-in color can't follow it on its own.
+struct MoreMenuLabel: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let style: UIUserInterfaceStyle = colorScheme == .dark ? .dark : .light
+        Iconly.more.image(.action, tint: UIColor.label.resolvedColor(with: UITraitCollection(userInterfaceStyle: style)))
     }
 }
 

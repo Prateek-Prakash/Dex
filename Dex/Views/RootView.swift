@@ -16,8 +16,8 @@ struct RootView: View {
     enum Page: Equatable {
         case chat
         case folders
-        /// One folder, by name.
-        case folder(String)
+        /// One folder, by id.
+        case folder(UUID)
     }
     
     /// Owned here so the connection survives switching pages.
@@ -26,6 +26,10 @@ struct RootView: View {
     @StateObject private var chatVM = ChatVM()
     @Environment(\.modelContext) private var modelContext
     @State var page: Page = .chat
+    /// True while a page is pushed onto the screen's own stack (a folder
+    /// opened from Folders): drawer picks open directly, but a pushed page
+    /// has the system back button, and the edge swipe is its Back.
+    @State private var isShowingPushedPage = false
     @State var isDrawerOpen: Bool = false
     @State var showSettingsView: Bool = false
     @Environment(\.displayScale) private var displayScale
@@ -35,6 +39,9 @@ struct RootView: View {
     @State private var dragOffset: CGFloat = 0
     /// Whether the current drag moves the drawer: decided on its first move.
     @State private var isDragging: Bool?
+    /// True while an edge swipe means Back: on a page with a back button,
+    /// the edge swipe goes back and never opens the drawer.
+    @State private var isBackSwipe: Bool = false
     /// True while a drag is under way. SwiftUI resets it even when a drag is
     /// cancelled (a call, the app backgrounding), which never calls
     /// `onEnded`; that reset is the cue to settle.
@@ -79,9 +86,11 @@ struct RootView: View {
                     case .chat:
                         ContentView(openDrawer: { setDrawer(open: true) })
                     case .folders:
-                        FoldersView(openDrawer: { setDrawer(open: true) })
-                    case .folder(let name):
-                        FolderView(name: name, openDrawer: { setDrawer(open: true) }, newSession: { newSession() })
+                        FoldersView(openDrawer: { setDrawer(open: true) }, newSession: { newSession() },
+                                    isShowingFolder: { isShowingPushedPage = $0 })
+                    case .folder(let id):
+                        FolderView(id: id, openDrawer: { setDrawer(open: true) }, newSession: { newSession() },
+                                   leave: { show(.folders) })
                     }
                 }
                     .environmentObject(globalVM)
@@ -122,6 +131,7 @@ struct RootView: View {
         .onChange(of: isGestureActive) {
             if !isGestureActive, isDragging != nil {
                 isDragging = nil
+                isBackSwipe = false
                 setDrawer(open: isDrawerOpen)
             }
         }
@@ -145,19 +155,32 @@ struct RootView: View {
             .updating($isGestureActive) { _, state, _ in state = true }
             .onChanged { value in
                 if isDragging == nil {
-                    isDragging = isHorizontal(value) && (isDrawerOpen || value.startLocation.x <= edgeWidth)
+                    let fromEdge = isHorizontal(value) && value.startLocation.x <= edgeWidth
+                    isBackSwipe = fromEdge && Self.edgeSwipeGoesBack(canGoBack: isShowingPushedPage, isDrawerOpen: isDrawerOpen)
+                    isDragging = !isBackSwipe && isHorizontal(value) && (isDrawerOpen || fromEdge)
                 }
                 guard isDragging == true else { return }
                 dragOffset = value.translation.width
             }
             .onEnded { value in
-                defer { isDragging = nil }
-                guard isDragging == true else { return }
+                defer {
+                    isDragging = nil
+                    isBackSwipe = false
+                }
+                // The stack's own swipe handles Back.
+                if isBackSwipe { return }
                 let travel = value.predictedEndTranslation.width / max(width, 1)
+                guard isDragging == true else { return }
                 setDrawer(open: Self.settlesOpen(wasOpen: isDrawerOpen, travel: travel, threshold: threshold))
             }
     }
     
+    /// Whether a swipe from the left edge is left to the stack's Back rather
+    /// than opening the drawer: on any pushed page, while the drawer is closed.
+    nonisolated static func edgeSwipeGoesBack(canGoBack: Bool, isDrawerOpen: Bool) -> Bool {
+        canGoBack && !isDrawerOpen
+    }
+
     /// Where a released drag settles. `travel` is the predicted end of the
     /// drag (so a quick flick counts) as a share of the drawer's width:
     /// past `threshold` toward the other state switches, anything less
@@ -175,6 +198,8 @@ struct RootView: View {
 
     /// Switches the main screen to `page` and closes the drawer onto it.
     private func show(_ page: Page) {
+        // A new page starts with nothing pushed.
+        if page != self.page { isShowingPushedPage = false }
         self.page = page
         setDrawer(open: false)
     }

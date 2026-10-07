@@ -73,10 +73,11 @@ struct ContentView: View {
                 } else if let chat = chatVM.chat {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
-                            ChatActions(rename: { chatToRename = chat }, delete: { chatToDelete = chat })
+                            RenameDeleteActions(rename: { chatToRename = chat }, delete: { chatToDelete = chat })
                         } label: {
-                            IconlyIcon(.more, .action)
+                            MoreMenuLabel()
                         }
+                        .tint(Color.primary)
                         .accessibilityLabel("Chat Options")
                     }
                 }

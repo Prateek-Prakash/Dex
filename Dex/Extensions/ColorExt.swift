@@ -41,6 +41,11 @@ extension Color {
     /// The hairline around the main screen while the drawer is open.
     static let drawerBorder = Color(light: 0xCDCDCB, dark: 0x3A3A39)
 
+    /// A Folders row's rounded icon tile and its subtitle (and glyph) gray,
+    /// measured from Claude's Projects list.
+    static let folderTile = Color(light: 0xEDEDEC, dark: 0x171717)
+    static let folderSubtitle = Color(light: 0x888681, dark: 0x888781)
+
     /// Settings screens, measured from Claude's.
     static let settingsBackground = Color(light: 0xF9F9F7, dark: 0x151515)
     static let settingsCard = Color(light: 0xFFFFFF, dark: 0x20201F)
