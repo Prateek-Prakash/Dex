@@ -9,6 +9,10 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Dex connects to Ollama servers on your local network.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Dex listens while you dictate a message.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Dex turns what you say into text for your message.</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Monoton-Regular.ttf</string>

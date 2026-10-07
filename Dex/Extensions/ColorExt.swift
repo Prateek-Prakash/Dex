@@ -18,6 +18,11 @@ extension Color {
     static let contextRing = Color(light: 0x3162B8, dark: 0x88C2FA)
     static let contextTrack = Color(light: 0xC8C8C6, dark: 0x686868)
 
+    /// The Stop square on its chip, measured from Claude's (white in dark
+    /// mode). A fixed color, not `.primary`, which the composer's glass
+    /// blends toward gray.
+    static let stopSquare = Color(light: 0x1F1F1E, dark: 0xF9F9F7)
+
     /// Inline code's chip and text in replies, measured from Claude's.
     static let inlineCodeFill = Color(light: 0xEDEDEC, dark: 0x262626)
     static let inlineCodeBorder = Color(light: 0xD3D3D1, dark: 0x3B3B3A)
