@@ -18,6 +18,11 @@ extension Color {
     static let contextRing = Color(light: 0x3162B8, dark: 0x88C2FA)
     static let contextTrack = Color(light: 0xC8C8C6, dark: 0x686868)
 
+    /// Inline code's chip and text in replies, measured from Claude's.
+    static let inlineCodeFill = Color(light: 0xEDEDEC, dark: 0x262626)
+    static let inlineCodeBorder = Color(light: 0xD3D3D1, dark: 0x3B3B3A)
+    static let inlineCodeText = Color(light: 0x284E90, dark: 0x7AA5E6)
+
     /// The drawer's background, measured from Claude's.
     static let drawerBackground = Color(light: 0xF3F3F0, dark: 0x101010)
 

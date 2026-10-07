@@ -10,6 +10,8 @@
 		6E0915AC2D48429000D3409D /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 6E0915AA2D48429000D3409D /* LICENSE */; };
 		6E0915AD2D48429000D3409D /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 6E0915AB2D48429000D3409D /* README.md */; };
 		6E0915AF2D4842E700D3409D /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = 6E0915AE2D4842E700D3409D /* .gitignore */; };
+		D1E7000000000000000000A3 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = D1E7000000000000000000A2 /* SwiftMath */; };
+		D1E7000000000000000000A6 /* HighlightSwift in Frameworks */ = {isa = PBXBuildFile; productRef = D1E7000000000000000000A5 /* HighlightSwift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -61,6 +63,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D1E7000000000000000000A3 /* SwiftMath in Frameworks */,
+				D1E7000000000000000000A6 /* HighlightSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -114,6 +118,10 @@
 				6E8893E62D41E43A000AC235 /* Dex */,
 			);
 			name = Dex;
+			packageProductDependencies = (
+				D1E7000000000000000000A2 /* SwiftMath */,
+				D1E7000000000000000000A5 /* HighlightSwift */,
+			);
 			productName = Dex;
 			productReference = 6E8893E42D41E43A000AC235 /* Dex.app */;
 			productType = "com.apple.product-type.application";
@@ -167,6 +175,10 @@
 			);
 			mainGroup = 6E8893DB2D41E43A000AC235;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D1E7000000000000000000A1 /* XCRemoteSwiftPackageReference "SwiftMath" */,
+				D1E7000000000000000000A4 /* XCRemoteSwiftPackageReference "HighlightSwift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6E8893E52D41E43A000AC235 /* Products */;
 			projectDirPath = "";
@@ -493,6 +505,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D1E7000000000000000000A1 /* XCRemoteSwiftPackageReference "SwiftMath" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mgriebling/SwiftMath";
+			requirement = {
+				kind = exactVersion;
+				version = 1.7.3;
+			};
+		};
+		D1E7000000000000000000A4 /* XCRemoteSwiftPackageReference "HighlightSwift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/appstefan/HighlightSwift";
+			requirement = {
+				kind = exactVersion;
+				version = 1.1.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D1E7000000000000000000A2 /* SwiftMath */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1E7000000000000000000A1 /* XCRemoteSwiftPackageReference "SwiftMath" */;
+			productName = SwiftMath;
+		};
+		D1E7000000000000000000A5 /* HighlightSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1E7000000000000000000A4 /* XCRemoteSwiftPackageReference "HighlightSwift" */;
+			productName = HighlightSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 	};
 	rootObject = 6E8893DC2D41E43A000AC235 /* Project object */;

@@ -95,6 +95,7 @@ private struct ReplyView: View {
             }
             if !message.content.isEmpty {
                 ChatMarkdownView(text: message.content)
+                    .equatable()
                     .textSelection(.enabled)
                     .contextMenu {
                         Button("Copy") {
