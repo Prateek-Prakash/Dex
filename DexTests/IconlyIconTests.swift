@@ -73,8 +73,9 @@ struct IconlyIconTests {
         #expect(abs(bounds.maxY - 22) < 0.001)
     }
 
-    // Icons come only from Iconly: no SF Symbols in the app but the one approved
-    // exception, marked `// iconly-exception:` on the line above; call sites
+    // Icons come only from Iconly: no SF Symbols in the app (an approved
+    // exception would be marked `// iconly-exception:` on the line above; Dex
+    // has none since the main screen's mark is drawn in code); call sites
     // name a context rather than a raw size, and every `.custom` escape hatch
     // says why on the line above.
     @Test func callSitesUseIconlyAndContexts() throws {
@@ -112,7 +113,7 @@ struct IconlyIconTests {
             }
         }
         #expect(scanned >= 10, "Only scanned \(scanned) files")
-        #expect(exceptions <= 1, "Dex allows one SF Symbol, found \(exceptions)")
+        #expect(exceptions == 0, "Dex uses no SF Symbols, found \(exceptions)")
         #expect(violations.isEmpty, "\(violations.joined(separator: "\n"))")
     }
 

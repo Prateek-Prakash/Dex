@@ -126,7 +126,7 @@ struct ContentView: View {
                 // A quiet caption under the mark, not a second headline.
                 Text(chatVM.isIncognito ? "THIS CHAT WON'T BE SAVED" : Greeting.text(for: context.date))
                     .font(.subheadline)
-                    .fontWeight(.medium)
+                    .fontWeight(.bold)
                     .fontDesign(.rounded)
                     .tracking(3.0)
                     .foregroundStyle(.secondary)
