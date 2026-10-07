@@ -100,6 +100,29 @@ final class ChatVM: ObservableObject {
         messages = stored.map(ChatMessage.init)
     }
 
+    /// Takes in what reached the store since the chat opened: another
+    /// device's messages, replies it finished, a reply it retried away. A
+    /// reply streaming here keeps its own copy; the store has only its start.
+    func refresh() {
+        guard let chat else { return }
+        guard !chat.isDeleted, chat.modelContext != nil else { return reset() }
+        let stored = chat.sortedMessages
+        records = Dictionary(stored.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let merged = Self.merge(local: messages, stored: stored.map(ChatMessage.init))
+        // Unchanged after this device's own saves: no redraw.
+        if merged != messages { messages = merged }
+    }
+
+    /// The stored messages, in order, but a reply streaming here as it is
+    /// here, kept even if the store lost it (another device retried it
+    /// away): it is saved again when it finishes.
+    nonisolated static func merge(local: [ChatMessage], stored: [ChatMessage]) -> [ChatMessage] {
+        let streaming = local.filter { $0.status == .streaming }
+        let streamingIDs = Set(streaming.map(\.id))
+        return (stored.filter { !streamingIDs.contains($0.id) } + streaming)
+            .sorted { $0.sequence < $1.sequence }
+    }
+
     /// Renames a saved chat. A blank name changes nothing; a rename made
     /// while the chat is being named wins over the generated name.
     func rename(_ chat: Chat, to title: String) {

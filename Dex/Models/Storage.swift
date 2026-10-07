@@ -153,6 +153,11 @@ final class Message {
         self.id = id
     }
 
+    /// The messages of the chat with id `chatID`.
+    static func inChat(_ chatID: UUID) -> Predicate<Message> {
+        #Predicate<Message> { $0.chat?.id == chatID }
+    }
+
     /// Takes every field but the id and chat from `message`.
     func update(from message: ChatMessage) {
         role = message.role.rawValue

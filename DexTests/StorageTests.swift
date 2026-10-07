@@ -220,6 +220,78 @@ extension StubbedNetworkTests {
             #expect(Array(chat.sortedMessages.suffix(2).map(\.content)) == ["Second", "Hello there"])
         }
 
+        @Test func refreshShowsWhatAnotherDeviceSynced() async throws {
+            let (vm, context) = Self.vm()
+            vm.send("First", client: Self.client(), model: Self.model)
+            await vm.waitForReply()
+            let chat = try #require(vm.chat)
+            let messageCount = vm.messages.count
+            // Another device's message arrives, and it rewrites the reply.
+            let synced = Message(id: UUID())
+            context.insert(synced)
+            synced.chat = chat
+            synced.sequence = 2
+            synced.content = "From the iPad"
+            try context.save()
+            let reply = try #require(chat.sortedMessages.first { $0.role == "assistant" })
+            reply.content = "Edited elsewhere"
+
+            vm.refresh()
+            #expect(vm.messages.count == messageCount + 1)
+            #expect(vm.messages.map(\.sequence) == [0, 1, 2])
+            #expect(vm.messages.last?.content == "From the iPad")
+            #expect(vm.messages[1].content == "Edited elsewhere")
+            // What arrived continues the chat: the next message follows it.
+            vm.send("Next", client: Self.client(), model: Self.model)
+            await vm.waitForReply()
+            #expect(chat.sortedMessages.map(\.sequence) == [0, 1, 2, 3, 4])
+        }
+
+        @Test func refreshAfterDeleteElsewhereClearsTheScreen() async throws {
+            let (vm, context) = Self.vm()
+            vm.send("Hi", client: Self.client(), model: Self.model)
+            await vm.waitForReply()
+            await vm.waitForTitle()
+            context.delete(try #require(vm.chat))
+            try context.save()
+            vm.refresh()
+            #expect(vm.chat == nil)
+            #expect(vm.messages.isEmpty)
+        }
+
+        @Test func mergeKeepsTheReplyStreamingHere() {
+            let user = ChatMessage(role: .user, content: "Hi", sequence: 0)
+            let local = ChatMessage(role: .assistant, content: "Half an ans", sequence: 1, status: .streaming)
+            var storedReply = local
+            storedReply.content = ""
+            storedReply.status = .stopped
+            let synced = ChatMessage(role: .user, content: "From the iPad", sequence: 2)
+
+            let merged = ChatVM.merge(local: [user, local], stored: [user, storedReply, synced])
+            #expect(merged == [user, local, synced])
+            // Retried away on another device: kept, saved again when it ends.
+            #expect(ChatVM.merge(local: [user, local], stored: [user]) == [user, local])
+            // Nothing streaming: the store wins, messages gone there go here.
+            #expect(ChatVM.merge(local: [user, storedReply], stored: [user]) == [user])
+        }
+
+        @Test func inChatFindsOnlyThatChatsMessages() throws {
+            let context = ModelContext(Storage.inMemory())
+            let mine = Chat(title: "Mine")
+            let other = Chat(title: "Other")
+            context.insert(mine)
+            context.insert(other)
+            for (chat, content) in [(mine, "A"), (mine, "B"), (other, "C")] {
+                let message = Message(id: UUID())
+                context.insert(message)
+                message.chat = chat
+                message.content = content
+            }
+            try context.save()
+            let found = try context.fetch(FetchDescriptor<Message>(predicate: Message.inChat(mine.id)))
+            #expect(Set(found.map(\.content)) == ["A", "B"])
+        }
+
         @Test func quitMidReplyReopensStopped() {
             let stored = Message(id: UUID())
             stored.role = "assistant"

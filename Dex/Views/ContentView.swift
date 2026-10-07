@@ -5,6 +5,7 @@
 //  Created by Prateek Prakash on 1/22/25.
 //
 
+import SwiftData
 import SwiftUI
 
 struct ContentView: View {
@@ -31,6 +32,12 @@ struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background {
+                if let id = chatVM.chat?.id {
+                    ChatSync(chatID: id)
+                        .id(id)
+                }
+            }
             // Inside the stack: the stack paints its own system background
             // over anything set behind it.
             .background(Color.appBackground.ignoresSafeArea())
@@ -144,6 +151,33 @@ struct ContentView: View {
         .onTapGesture {
             isComposerFocused = false
         }
+    }
+}
+
+/// Keeps the open chat in step with the store. Its queries refire once
+/// a sync from another device is merged in (and after this device's own
+/// saves, which change nothing): new messages then show, and a chat
+/// deleted elsewhere leaves the screen.
+private struct ChatSync: View {
+    let chatID: UUID
+    @EnvironmentObject private var chatVM: ChatVM
+    @Query private var chats: [Chat]
+    @Query private var messages: [Message]
+
+    init(chatID: UUID) {
+        self.chatID = chatID
+        _chats = Query(filter: #Predicate<Chat> { $0.id == chatID })
+        _messages = Query(filter: Message.inChat(chatID))
+    }
+
+    var body: some View {
+        Color.clear
+            .onChange(of: messages.map(ChatMessage.init)) {
+                chatVM.refresh()
+            }
+            .onChange(of: chats.isEmpty) {
+                if chats.isEmpty, chatVM.chat?.id == chatID { chatVM.reset() }
+            }
     }
 }
 
