@@ -23,13 +23,13 @@ struct RenameDeleteActions: View {
     }
 }
 
-/// The ⋯ menu button's icon. The toolbar redraws a Menu's label as a
-/// template in its own tint, ignoring the color set on it, so the glyph is
-/// an image with the label color baked in (black in light mode, white in
-/// dark), like Delete's red. Redrawn when the appearance changes, since a
-/// baked-in color can't follow it on its own.
+/// The ⋯ menu button's icon, the label color drawn into its pixels:
+/// black in light mode, white in dark, matching the back and drawer
+/// buttons. A template label comes out a dim, opposite-mode gray in the
+/// toolbar, and the scheme is read by the caller, outside the toolbar.
 struct MoreMenuLabel: View {
-    @Environment(\.colorScheme) private var colorScheme
+    /// The page's color scheme, read outside the toolbar.
+    let colorScheme: ColorScheme
 
     var body: some View {
         let style: UIUserInterfaceStyle = colorScheme == .dark ? .dark : .light

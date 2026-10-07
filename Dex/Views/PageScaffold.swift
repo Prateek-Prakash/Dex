@@ -25,6 +25,8 @@ struct PageScaffold<Content: View, Actions: View>: View {
     @ViewBuilder var content: Content
     /// The ⋯ menu's items, top right; none when empty.
     @ViewBuilder var actions: Actions
+    /// Read here, outside the toolbar, for `MoreMenuLabel`.
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         if !embedsStack {
@@ -44,7 +46,7 @@ struct PageScaffold<Content: View, Actions: View>: View {
             // stack: the stack paints its own system background over
             // anything set behind it.
             ZStack {
-                Color.appBackground
+                Color.pageBackground
                     .ignoresSafeArea()
                 content
             }
@@ -63,7 +65,7 @@ struct PageScaffold<Content: View, Actions: View>: View {
                             Menu {
                                 actions
                             } label: {
-                                MoreMenuLabel()
+                                MoreMenuLabel(colorScheme: colorScheme)
                             }
                             .tint(Color.primary)
                             .accessibilityLabel("Options")

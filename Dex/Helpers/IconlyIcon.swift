@@ -113,7 +113,9 @@ extension Iconly {
     /// The glyph as an image, drawn exactly as `IconlyIcon` draws it, for
     /// places that take only an `Image`: menu items. A template, tinted like
     /// text, unless `tint` is given: menus don't tint a destructive item's
-    /// image red on their own, so Delete passes `.systemRed`.
+    /// image red on their own, so Delete passes `.systemRed`. A tint is
+    /// drawn into the pixels, not attached with `withTintColor`: the
+    /// toolbar draws a Menu label's image without applying that.
     @MainActor
     func image(_ context: IconlyIcon.Context, tint: UIColor? = nil) -> Image {
         let size = context.points
@@ -122,8 +124,9 @@ extension Iconly {
         let rendered = UIGraphicsImageRenderer(size: rect.size).image { renderer in
             let cg = renderer.cgContext
             cg.addPath(IconlyShape(icon: self, fill: fill).path(in: rect).cgPath)
-            cg.setFillColor(UIColor.black.cgColor)
-            cg.setStrokeColor(UIColor.black.cgColor)
+            let ink = (tint ?? .black).cgColor
+            cg.setFillColor(ink)
+            cg.setStrokeColor(ink)
             if Iconly.filled.contains(self) {
                 cg.fillPath(using: .evenOdd)
             } else {
@@ -133,8 +136,8 @@ extension Iconly {
                 cg.strokePath()
             }
         }
-        guard let tint else { return Image(uiImage: rendered.withRenderingMode(.alwaysTemplate)) }
-        return Image(uiImage: rendered.withTintColor(tint, renderingMode: .alwaysOriginal))
+        guard tint != nil else { return Image(uiImage: rendered.withRenderingMode(.alwaysTemplate)) }
+        return Image(uiImage: rendered.withRenderingMode(.alwaysOriginal))
     }
 }
 

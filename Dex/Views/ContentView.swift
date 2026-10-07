@@ -10,6 +10,8 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var globalVM: GlobalVM
     @EnvironmentObject var chatVM: ChatVM
+    /// Read here, outside the toolbar, for `MoreMenuLabel`.
+    @Environment(\.colorScheme) private var colorScheme
     
     /// Opens the drawer behind this screen.
     var openDrawer: () -> Void = {}
@@ -75,7 +77,7 @@ struct ContentView: View {
                         Menu {
                             RenameDeleteActions(rename: { chatToRename = chat }, delete: { chatToDelete = chat })
                         } label: {
-                            MoreMenuLabel()
+                            MoreMenuLabel(colorScheme: colorScheme)
                         }
                         .tint(Color.primary)
                         .accessibilityLabel("Chat Options")

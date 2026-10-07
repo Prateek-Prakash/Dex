@@ -10,6 +10,10 @@ import SwiftUI
 extension Color {
     /// The main screen's background, measured from Claude's chat screen.
     static let appBackground = Color(light: 0xF9F9F7, dark: 0x151515)
+
+    /// A page's background (Folders, a folder), measured from Claude's
+    /// Projects list: the chat screen's in light mode, darker in dark.
+    static let pageBackground = Color(light: 0xF9F9F7, dark: 0x0B0B0B)
     
     /// The message box's model pill and microphone circle, measured from Claude's.
     static let composerChip = Color(light: 0xF0EFEC, dark: 0x434343)
