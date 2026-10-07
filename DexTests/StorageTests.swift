@@ -347,3 +347,80 @@ struct FolderActionTests {
         #expect(try context.fetch(FetchDescriptor<Chat>()).map(\.title) == ["Outside"])
     }
 }
+
+/// Pinning: the toggle, and the drawer's Pinned and Recent sections.
+@MainActor
+struct PinTests {
+    @Test func togglePinSetsAndClearsPinnedAt() throws {
+        let context = ModelContext(Storage.inMemory())
+        let chat = Chat(title: "Notes")
+        let folder = Folder(name: "Lab")
+        context.insert(chat)
+        context.insert(folder)
+        let vm = ChatVM()
+        vm.context = context
+
+        vm.togglePin(chat)
+        vm.togglePin(folder)
+        #expect(chat.pinnedAt != nil)
+        #expect(folder.pinnedAt != nil)
+        #expect(!context.hasChanges)
+        vm.togglePin(chat)
+        vm.togglePin(folder)
+        #expect(chat.pinnedAt == nil)
+        #expect(folder.pinnedAt == nil)
+    }
+
+    @Test func pinnedMixesFoldersAndChatsLatestFirst() {
+        let now = Date()
+        let lab = Folder(name: "Lab")
+        lab.pinnedAt = now.addingTimeInterval(-60)
+        let recipes = Folder(name: "Recipes")
+        let notes = Chat(title: "Notes")
+        notes.pinnedAt = now
+        let trip = Chat(title: "Trip")
+        trip.pinnedAt = now.addingTimeInterval(-120)
+        let loose = Chat(title: "Loose")
+
+        let pinned = DrawerItem.pinned(folders: [lab, recipes], chats: [trip, loose, notes])
+        #expect(pinned.map(\.title) == ["Notes", "Lab", "Trip"])
+        #expect(pinned.map(\.kind) == [.chat, .folder, .chat])
+        #expect(pinned[1].id == lab.id.uuidString)
+    }
+
+    @Test func reorderedPinsKeepTheDraggedOrder() throws {
+        let context = ModelContext(Storage.inMemory())
+        let lab = Folder(name: "Lab")
+        let notes = Chat(title: "Notes")
+        let trip = Chat(title: "Trip")
+        context.insert(lab)
+        context.insert(notes)
+        context.insert(trip)
+        let vm = ChatVM()
+        vm.context = context
+        [lab].forEach(vm.togglePin)
+        [notes, trip].forEach(vm.togglePin)
+
+        // Trip dragged to the top, Lab to the bottom.
+        let dragged = [DrawerItem(trip), DrawerItem(notes), DrawerItem(lab)]
+        let now = Date()
+        vm.reorderPinned(dragged, now: now)
+        #expect(DrawerItem.pinned(folders: [lab], chats: [notes, trip]).map(\.title) == ["Trip", "Notes", "Lab"])
+        #expect(trip.pinnedAt == now)
+        #expect(!context.hasChanges)
+
+        // A new pin lands on top.
+        let loose = Chat(title: "Loose")
+        context.insert(loose)
+        vm.togglePin(loose)
+        #expect(DrawerItem.pinned(folders: [lab], chats: [notes, trip, loose]).first?.title == "Loose")
+    }
+
+    @Test func recentLeavesOutPinnedChatsKeepingOrder() {
+        let first = Chat(title: "First")
+        let pinned = Chat(title: "Pinned")
+        pinned.pinnedAt = Date()
+        let last = Chat(title: "Last")
+        #expect(DrawerItem.recent([first, pinned, last]).map(\.title) == ["First", "Last"])
+    }
+}

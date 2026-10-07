@@ -75,7 +75,8 @@ struct ContentView: View {
                 } else if let chat = chatVM.chat {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
-                            RenameDeleteActions(rename: { chatToRename = chat }, delete: { chatToDelete = chat })
+                            ItemActions(isPinned: chat.pinnedAt != nil, pin: { chatVM.togglePin(chat) },
+                                        rename: { chatToRename = chat }, delete: { chatToDelete = chat })
                         } label: {
                             MoreMenuLabel(colorScheme: colorScheme)
                         }

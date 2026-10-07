@@ -26,19 +26,29 @@ struct DrawerView: View {
     var renameChat: (Chat, String) -> Void = { _, _ in }
     /// Deletes a saved chat, once confirmed.
     var deleteChat: (Chat) -> Void = { _ in }
+    /// Pins or unpins a saved chat.
+    var pinChat: (Chat) -> Void = { _ in }
+    /// Pins or unpins a folder.
+    var pinFolder: (Folder) -> Void = { _ in }
+    /// Deletes a folder and its chats, once confirmed.
+    var deleteFolder: (Folder) -> Void = { _ in }
+    /// Saves the pinned rows' new order after a drag, top first.
+    var reorderPinned: ([DrawerItem]) -> Void = { _ in }
     /// Opens Settings.
     var openSettings: () -> Void = {}
     /// Starts an empty chat and closes the drawer onto it.
     var newSession: () -> Void = {}
     
-    /// The pinned folder row that is highlighted; nil otherwise. A chat
-    /// row's highlight follows `currentChatID` instead.
-    @State private var selectedItem: DrawerItem?
     /// Every saved chat, latest first.
     @Query(sort: \Chat.lastMessageAt, order: .reverse) private var chats: [Chat]
+    /// Every folder; the pinned ones show.
+    @Query private var folders: [Folder]
     /// The chat whose Rename or Delete dialog is up.
     @State private var chatToRename: Chat?
     @State private var chatToDelete: Chat?
+    /// The folder whose Rename or Delete dialog is up.
+    @State private var folderToRename: Folder?
+    @State private var folderToDelete: Folder?
     /// Section headers, a step above body; follow Dynamic Type.
     @ScaledMetric(relativeTo: .body) private var headerTextSize: CGFloat = 17.0
     
@@ -50,21 +60,15 @@ struct DrawerView: View {
     var body: some View {
         NavigationStack {
             List {
-                row(.folder, "Folders", isSelected: page == .folders && selectedItem == nil) {
-                    selectedItem = nil
+                row(.folder, "Folders", isSelected: page == .folders) {
                     select(.folders)
                 }
-                ForEach(DrawerItem.sections(pinned: [], recent: chats.map(DrawerItem.init)), id: \.title) { section in
+                ForEach(DrawerItem.sections(pinned: DrawerItem.pinned(folders: folders, chats: chats),
+                                            recent: DrawerItem.recent(chats)), id: \.title) { section in
                     self.section(section.title, section.items)
                 }
             }
             .listStyle(.plain)
-            // A folder's New Session leaves the folder: drop its highlight.
-            .onChange(of: page) {
-                if page == .chat, selectedItem?.kind == .folder {
-                    selectedItem = nil
-                }
-            }
             .environment(\.defaultMinListRowHeight, Self.rowHeight)
             .safeAreaPadding(.trailing, sliver)
             .scrollContentBackground(.hidden)
@@ -86,6 +90,7 @@ struct DrawerView: View {
             }
             .toolbarTitleDisplayMode(.inline)
             .chatActionAlerts(renaming: $chatToRename, deleting: $chatToDelete, rename: renameChat, delete: deleteChat)
+            .folderActionAlerts(renaming: $folderToRename, deleting: $folderToDelete, delete: deleteFolder)
             .safeAreaInset(edge: .bottom) {
                 HStack {
                     Button {
@@ -97,10 +102,7 @@ struct DrawerView: View {
                     }
                     .buttonStyle(.plain)
                     Spacer()
-                    PillButton(icon: .add, title: "New Session") {
-                        selectedItem = nil
-                        newSession()
-                    }
+                    PillButton(icon: .add, title: "New Session", action: newSession)
                 }
                 .padding(.horizontal, 16.0)
                 // The drawer is full width; keep clear of the main screen's sliver.
@@ -120,7 +122,9 @@ struct DrawerView: View {
         return EdgeInsets(top: 0, leading: inset, bottom: 0, trailing: inset)
     }
     
-    /// A section header that scrolls with the list, then its chats.
+    /// A section header that scrolls with the list, then its rows. Pinned
+    /// rows drag to reorder: a long press lifts one, and moving it leaves
+    /// the menu for the drag.
     @ViewBuilder
     private func section(_ header: String, _ items: [DrawerItem]) -> some View {
         Text(header)
@@ -131,51 +135,58 @@ struct DrawerView: View {
             .listRowInsets(rowInsets)
             .listRowBackground(Color.clear)
         ForEach(items) { item in
-            if item.kind == .folder {
-                row(item.icon, item.title, isSelected: selectedItem == item) {
-                    selectedItem = item
-                    if let id = UUID(uuidString: item.id) { select(.folder(id)) }
+            if item.kind == .folder, let folder = folders.first(where: { $0.id.uuidString == item.id }) {
+                // Follows the page, so a rename or a delete anywhere can't
+                // leave it stale.
+                row(item.icon, item.title, isSelected: page == .folder(folder.id)) {
+                    select(.folder(folder.id))
+                }
+                .contextMenu {
+                    ItemActions(isPinned: folder.pinnedAt != nil, pin: { pinFolder(folder) },
+                                rename: { folderToRename = folder }, delete: { folderToDelete = folder })
                 }
             } else if let chat = chats.first(where: { $0.id.uuidString == item.id }) {
                 row(item.icon, item.title, isSelected: page == .chat && chat.id == currentChatID) {
-                    selectedItem = nil
                     openChat(chat)
                 }
                 .contextMenu {
-                    RenameDeleteActions(rename: { chatToRename = chat }, delete: { chatToDelete = chat })
+                    ItemActions(isPinned: chat.pinnedAt != nil, pin: { pinChat(chat) },
+                                rename: { chatToRename = chat }, delete: { chatToDelete = chat })
                 }
             }
         }
+        .onMove(perform: header == DrawerItem.pinnedTitle ? { from, to in
+            var moved = items
+            moved.move(fromOffsets: from, toOffset: to)
+            reorderPinned(moved)
+        } : nil)
     }
     
-    /// A drawer row: icon and title, highlighted while selected.
+    /// A drawer row: icon and title, highlighted while selected. The
+    /// highlight is the row's own rounded background, not the list's row
+    /// background, and the row's frame is exactly the highlight's: a lifted
+    /// row (long press, drag to reorder) is then that rounded shape with its
+    /// own color, never the system's black rectangle. Unselected, it's the
+    /// drawer's color, so a lifted row reads clear.
     private func row(_ icon: Iconly, _ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        let shape = RoundedRectangle(cornerRadius: 12.0, style: .continuous)
+        return Button(action: action) {
             HStack(spacing: 14.0) {
                 IconlyIcon(icon, .tile)
                 Text(title)
                     .lineLimit(1)
                     .font(.system(size: rowTextSize, design: .rounded))
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Self.highlightPadding)
+            .frame(maxWidth: .infinity, minHeight: Self.rowHeight, alignment: .leading)
+            .background(isSelected ? Color.drawerSelection : Color.drawerBackground, in: shape)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contentShape([.dragPreview, .contextMenuPreview], shape)
         .listRowSeparator(.hidden)
-        .listRowInsets(rowInsets)
-        .listRowBackground(highlight(isSelected))
-    }
-    
-    /// The selected row's rounded highlight, its edges in line with the title.
-    @ViewBuilder
-    private func highlight(_ isSelected: Bool) -> some View {
-        if isSelected {
-            RoundedRectangle(cornerRadius: 12.0, style: .continuous)
-                .fill(Color.drawerSelection)
-                .padding(.horizontal, titleLeading)
-        } else {
-            Color.clear
-        }
+        .listRowInsets(EdgeInsets(top: 0, leading: titleLeading, bottom: 0, trailing: titleLeading))
+        .listRowBackground(Color.clear)
     }
     
     private var title: some View {

@@ -77,6 +77,10 @@ struct RootView: View {
                     openChat: { openChat($0) },
                     renameChat: { chatVM.rename($0, to: $1) },
                     deleteChat: { chatVM.delete($0) },
+                    pinChat: { chatVM.togglePin($0) },
+                    pinFolder: { chatVM.togglePin($0) },
+                    deleteFolder: { deleteFolder($0) },
+                    reorderPinned: { chatVM.reorderPinned($0) },
                     openSettings: { showSettingsView = true },
                     newSession: { newSession() }
                 )
@@ -208,6 +212,13 @@ struct RootView: View {
     private func openChat(_ chat: Chat) {
         chatVM.open(chat)
         show(.chat)
+    }
+
+    /// Deletes a folder from the drawer. On screen, its page gives way to
+    /// Folders, the drawer staying open.
+    private func deleteFolder(_ folder: Folder) {
+        if page == .folder(folder.id) { page = .folders }
+        chatVM.delete(folder)
     }
 
     /// An empty chat on the main screen.

@@ -125,6 +125,36 @@ final class ChatVM: ObservableObject {
         commit()
     }
 
+    /// Pins a saved chat, or unpins a pinned one.
+    func togglePin(_ chat: Chat) {
+        chat.pinnedAt = chat.pinnedAt == nil ? .now : nil
+        commit()
+    }
+
+    /// Pins a folder, or unpins a pinned one.
+    func togglePin(_ folder: Folder) {
+        folder.pinnedAt = folder.pinnedAt == nil ? .now : nil
+        commit()
+    }
+
+    /// Saves the pinned rows' order, top first, as their pin times: the top
+    /// row the latest, each next a second earlier, so a new pin still
+    /// lands on top.
+    func reorderPinned(_ items: [DrawerItem], now: Date = .now) {
+        guard let context else { return }
+        let folders = (try? context.fetch(FetchDescriptor<Folder>())) ?? []
+        let chats = (try? context.fetch(FetchDescriptor<Chat>())) ?? []
+        for (index, item) in items.enumerated() {
+            let pinnedAt = now.addingTimeInterval(-Double(index))
+            if item.kind == .folder {
+                folders.first { $0.id.uuidString == item.id }?.pinnedAt = pinnedAt
+            } else {
+                chats.first { $0.id.uuidString == item.id }?.pinnedAt = pinnedAt
+            }
+        }
+        commit()
+    }
+
     /// Waits for the reply under way, if any. For tests.
     func waitForReply() async {
         await streamTask?.value

@@ -9,7 +9,8 @@ import SwiftData
 import SwiftUI
 
 /// Folders, opened from the drawer, newest first. New Folder asks for a
-/// name; a new folder opens straight away. A folder opens pushed onto this
+/// name; a new folder opens straight away. A long press pins, renames or
+/// deletes one. A folder opens pushed onto this
 /// page's stack, with the system back button and swipe.
 struct FoldersView: View {
     /// Opens the drawer behind this screen.
@@ -23,12 +24,16 @@ struct FoldersView: View {
     /// The pushed folders' ids; at most one for now.
     @State private var path: [UUID] = []
 
+    @EnvironmentObject private var chatVM: ChatVM
     @Environment(\.modelContext) private var context
     @Query(sort: Folder.newestFirst) private var folders: [Folder]
     @State private var isCreating = false
     @State private var name = ""
     /// The name just refused as taken; its alert leads back to Create Folder.
     @State private var takenName: String?
+    /// The folder whose Rename or Delete dialog is up.
+    @State private var folderToRename: Folder?
+    @State private var folderToDelete: Folder?
     /// Sizes measured from Claude's Projects list; follow Dynamic Type.
     @ScaledMetric(relativeTo: .body) private var titleSize: CGFloat = 19.0
     @ScaledMetric(relativeTo: .subheadline) private var subtitleSize: CGFloat = 16.0
@@ -56,6 +61,10 @@ struct FoldersView: View {
                     row(folder)
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    ItemActions(isPinned: folder.pinnedAt != nil, pin: { chatVM.togglePin(folder) },
+                                rename: { folderToRename = folder }, delete: { folderToDelete = folder })
+                }
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 9.0, leading: 24.0, bottom: 9.0, trailing: 24.0))
                 .listRowBackground(Color.clear)
@@ -63,6 +72,7 @@ struct FoldersView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
         }
+        .folderActionAlerts(renaming: $folderToRename, deleting: $folderToDelete) { chatVM.delete($0) }
         .alert("Create Folder", isPresented: $isCreating) {
             TextField("Name", text: $name)
             Button("Cancel", role: .cancel) {}
@@ -122,4 +132,5 @@ struct FoldersView: View {
 #Preview {
     FoldersView()
         .modelContainer(Storage.inMemory())
+        .environmentObject(ChatVM())
 }
