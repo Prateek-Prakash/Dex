@@ -290,7 +290,7 @@ struct ChatMathBlockView: View {
 
     var body: some View {
         if let rendered = ChatMathRenderer.render(latex, size: size, color: color, display: true) {
-            let image = Image(uiImage: rendered.image).padding(.vertical, 2)
+            let image = Image(uiImage: rendered.image).padding(.vertical, Space.xxs)
             ViewThatFits(in: .horizontal) {
                 image
                 ScrollView(.horizontal, showsIndicators: false) { image }

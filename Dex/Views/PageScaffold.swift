@@ -31,7 +31,7 @@ struct PageScaffold<Content: View, Actions: View>: View {
             // stack: the stack paints its own system background over
             // anything set behind it.
             ZStack {
-                Color.pageBackground
+                Color.surfacePage
                     .ignoresSafeArea()
                 content
             }
@@ -52,7 +52,7 @@ struct PageScaffold<Content: View, Actions: View>: View {
                             } label: {
                                 MoreMenuLabel(colorScheme: colorScheme)
                             }
-                            .tint(Color.primary)
+                            .tint(Color.ink)
                             .accessibilityLabel("Options")
                         }
                     }
@@ -64,8 +64,8 @@ struct PageScaffold<Content: View, Actions: View>: View {
                         Spacer()
                         PillButton(icon: .add, title: pillTitle, action: pillAction)
                     }
-                    .padding(.horizontal, 16.0)
-                    .padding(.bottom, 8.0)
+                    .padding(.horizontal, Space.xl)
+                    .padding(.bottom, Space.m)
                 }
     }
 }

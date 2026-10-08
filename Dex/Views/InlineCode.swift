@@ -26,7 +26,7 @@ enum InlineCode {
         Text(verbatim: padding + code + padding)
             // A step under the text around it, as monospaced type runs large.
             .font(.system(size: size * 0.88, design: .monospaced))
-            .foregroundStyle(Color.inlineCodeText)
+            .foregroundStyle(Color.accentText)
             .customAttribute(Chip())
     }
 }
@@ -41,7 +41,7 @@ struct InlineCodeRenderer: TextRenderer {
     func draw(layout: Text.Layout, in context: inout GraphicsContext) {
         for line in layout {
             for rect in Self.chipRects(line) {
-                let chip = RoundedRectangle(cornerRadius: 5.0, style: .continuous)
+                let chip = RoundedRectangle(cornerRadius: Radius.inlineCode, style: .continuous)
                     .path(in: rect.insetBy(dx: 0, dy: -1.0))
                 context.fill(chip, with: .color(fill))
                 context.stroke(chip, with: .color(border), lineWidth: hairline)

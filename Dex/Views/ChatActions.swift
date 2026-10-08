@@ -38,7 +38,7 @@ struct ItemActions: View {
         }
         Divider()
         Button(role: .destructive, action: delete) {
-            Label { Text("Delete") } icon: { Iconly.delete.image(.menu, tint: .systemRed) }
+            Label { Text("Delete") } icon: { Iconly.delete.image(.menu, tint: .destructive) }
         }
     }
 }
@@ -53,7 +53,7 @@ struct MoreMenuLabel: View {
 
     var body: some View {
         let style: UIUserInterfaceStyle = colorScheme == .dark ? .dark : .light
-        Iconly.more.image(.action, tint: UIColor.label.resolvedColor(with: UITraitCollection(userInterfaceStyle: style)))
+        Iconly.more.image(.action, tint: UIColor.textPrimary.resolvedColor(with: UITraitCollection(userInterfaceStyle: style)))
     }
 }
 
@@ -247,7 +247,7 @@ extension View {
         sheet(item: organizing) { chat in
             // Claude's sheet: the chat screen's background, not a page's.
             OrganizeView(chat: chat, move: move)
-                .presentationBackground(Color.appBackground)
+                .presentationBackground(Color.surfaceBase)
         }
     }
 }

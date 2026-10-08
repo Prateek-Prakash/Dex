@@ -27,7 +27,7 @@ struct ComposerView: View {
     @State private var dictatedMessage: String = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12.0) {
+        VStack(alignment: .leading, spacing: Space.l) {
             TextField("Ask Dex", text: $message, axis: .vertical)
                 .lineLimit(1...6)
                 .focused(isFocused)
@@ -38,10 +38,10 @@ struct ComposerView: View {
                 controlsRow
             }
         }
-        .padding(16.0)
-        .glassRoundedRect(cornerRadius: 28.0)
-        .padding(.horizontal, 12.0)
-        .padding(.bottom, 8.0)
+        .padding(Space.xl)
+        .glassRoundedRect(cornerRadius: Radius.composer)
+        .padding(.horizontal, Space.l)
+        .padding(.bottom, Space.m)
         .sensoryFeedback(.impact(weight: .light), trigger: chatVM.messages.count)
         .sensoryFeedback(.start, trigger: dictation.state == .recording)
         // Leaving the screen ends a recording; the words heard stay.
@@ -70,14 +70,14 @@ struct ComposerView: View {
 
     /// Cancel, the waveform, stop and send, while dictating.
     private var recordingRow: some View {
-        HStack(spacing: 12.0) {
+        HStack(spacing: Space.l) {
             Button {
                 dictation.stop()
                 message = textBeforeDictation
             } label: {
                 IconlyIcon(.close, .field)
-                    .padding(6.0)
-                    .background(Color.composerChip, in: Circle())
+                    .padding(Space.s)
+                    .background(Color.surfaceRaised, in: Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Cancel Dictation")
@@ -107,7 +107,7 @@ struct ComposerView: View {
                     }
                 }
             } label: {
-                HStack(spacing: 4.0) {
+                HStack(spacing: Space.xs) {
                     Text(modelsVM.pickedModel?.name ?? "Model")
                         .font(.subheadline)
                         .fontDesign(.rounded)
@@ -115,9 +115,10 @@ struct ComposerView: View {
                     IconlyIcon(.chevronDown, .disclosure)
                 }
                 .foregroundStyle(.primary)
-                .padding(.horizontal, 12.0)
+                .padding(.horizontal, Space.l)
+                // spacing: the model pill's height beside the microphone circle, by design
                 .padding(.vertical, 7.0)
-                .background(Color.composerChip, in: Capsule())
+                .background(Color.surfaceRaised, in: Capsule())
             }
             Spacer()
             Button {
@@ -127,8 +128,8 @@ struct ComposerView: View {
                 Task { await dictation.start() }
             } label: {
                 IconlyIcon(.microphone, .field)
-                    .padding(6.0)
-                    .background(Color.composerChip, in: Circle())
+                    .padding(Space.s)
+                    .background(Color.surfaceRaised, in: Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dictate")
@@ -151,20 +152,20 @@ struct ComposerView: View {
     /// A plain square, like Claude's Stop; drawn, not an icon. On the
     /// microphone's chip.
     private var stopSquare: some View {
-        RoundedRectangle(cornerRadius: 3.0, style: .continuous)
-            .fill(Color.stopSquare)
+        RoundedRectangle(cornerRadius: Radius.stopSquare, style: .continuous)
+            .fill(Color.inkSoft)
             .frame(width: 12.0, height: 12.0)
             .frame(width: 16.0, height: 16.0)
-            .padding(8.0)
-            .background(Color.composerChip, in: Circle())
+            .padding(Space.m)
+            .background(Color.surfaceRaised, in: Circle())
     }
 
     private func sendButton(_ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             IconlyIcon(.send, .row)
-                .foregroundStyle(Color.appBackground)
-                .padding(8.0)
-                .background(Color.primary.opacity(canSend ? 1.0 : 0.3), in: Circle())
+                .foregroundStyle(Color.surfaceBase)
+                .padding(Space.m)
+                .background(Color.ink.opacity(canSend ? 1.0 : 0.3), in: Circle())
         }
         .buttonStyle(.plain)
         .disabled(!canSend)

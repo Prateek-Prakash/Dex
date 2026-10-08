@@ -35,19 +35,19 @@ struct ModelsView: View {
                                 IconlyIcon(.close, .inlineButton)
                             }
                             .buttonStyle(.bordered)
-                            .tint(Color.red)
+                            .tint(Color.destructive)
                         }
                     } label: {
                         VStack(alignment: .leading) {
                             Text(entry.key.split(separator: ":")[0].uppercased())
                                 .font(.system(size: 12.0, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.red)
+                                .foregroundStyle(Color.destructive)
                             Text(entry.key.split(separator: ":").count > 1 ? entry.key.split(separator: ":")[1].uppercased() : "LATEST")
                                 .font(.system(size: 10.0, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.red.opacity(0.65))
+                                .foregroundStyle(Color.destructive.opacity(0.65))
                             Text(entry.value)
                                 .font(.system(size: 9.0, weight: .thin, design: .monospaced))
-                                .foregroundStyle(Color.red.opacity(0.65))
+                                .foregroundStyle(Color.destructive.opacity(0.65))
                         }
                     }
                 }
@@ -59,13 +59,13 @@ struct ModelsView: View {
                         VStack(alignment: .leading) {
                             Text(entry.key.split(separator: ":")[0].uppercased())
                                 .font(.system(size: 12.0, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.primary)
+                                .foregroundStyle(Color.textPrimary)
                             Text(entry.key.split(separator: ":").count > 1 ? entry.key.split(separator: ":")[1].uppercased() : "LATEST")
                                 .font(.system(size: 10.0, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.secondary)
+                                .foregroundStyle(Color.textSecondary)
                             Text(entry.value)
                                 .font(.system(size: 9.0, weight: .thin, design: .monospaced))
-                                .foregroundStyle(Color.secondary)
+                                .foregroundStyle(Color.textSecondary)
                         }
                     }
                 }
@@ -96,7 +96,7 @@ struct ModelsView: View {
                         Button("Delete") {
                             modelToDelete = model
                         }
-                        .tint(Color.red)
+                        .tint(Color.destructive)
                     }
                 }
             }
@@ -148,7 +148,7 @@ struct ModelsView: View {
         } message: { model in
             Text("\(model.baseName.uppercased())\n\(model.tag.uppercased())\n\(model.digest.prefix(12).uppercased())\n\(model.size.byteSize)")
         }
-        .tint(Color.primary)
+        .tint(Color.ink)
     }
 }
 

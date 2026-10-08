@@ -126,7 +126,7 @@ extension Iconly {
         let rendered = UIGraphicsImageRenderer(size: rect.size).image { renderer in
             let cg = renderer.cgContext
             cg.addPath(IconlyShape(icon: self, fill: fill).path(in: rect).cgPath)
-            let ink = (tint ?? .black).cgColor
+            let ink = (tint ?? .textPrimary).cgColor
             cg.setFillColor(ink)
             cg.setStrokeColor(ink)
             if Iconly.filled.contains(self) {

@@ -60,12 +60,7 @@ struct LiveMark: View {
         }
     }
 
-    static let glowColors: [Color] = [
-        Color(light: 0x3B82F6, dark: 0x60A5FA), // blue
-        Color(light: 0x8B5CF6, dark: 0xA78BFA), // purple
-        Color(light: 0xEC4899, dark: 0xF472B6), // pink
-        Color(light: 0xF97316, dark: 0xFB923C), // orange
-    ]
+    static let glowColors = Color.markGlow
 
     // MARK: Motion, as pure functions of the clock and `life`.
 
@@ -186,6 +181,7 @@ private struct LiveMarkCanvas: View, Animatable {
 }
 
 #Preview {
+    // spacing: preview only, room for both marks' glow
     VStack(spacing: 40.0) {
         LiveMark(isAlive: true)
         LiveMark(isAlive: false)

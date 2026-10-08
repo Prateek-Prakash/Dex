@@ -40,7 +40,7 @@ struct WaveformView: View {
                     var line = Path()
                     line.move(to: CGPoint(x: bar.x, y: size.height / 2 - reach))
                     line.addLine(to: CGPoint(x: bar.x, y: size.height / 2 + reach))
-                    canvas.stroke(line, with: .color(.primary),
+                    canvas.stroke(line, with: .color(Color.ink),
                                   style: StrokeStyle(lineWidth: Self.barWidth, lineCap: .round))
                 }
             }

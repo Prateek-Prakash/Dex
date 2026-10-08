@@ -47,7 +47,7 @@ struct ContentView: View {
         }
         // Inside the stack: the stack paints its own system background
         // over anything set behind it.
-        .background(Color.appBackground.ignoresSafeArea())
+        .background(Color.surfaceBase.ignoresSafeArea())
         .toolbar {
             // Pushed, the system back button takes its place.
             if pushedChat == nil {
@@ -70,13 +70,13 @@ struct ContentView: View {
                     Button {
                         push(.folder(folder.id))
                     } label: {
-                        HStack(spacing: 6.0) {
+                        HStack(spacing: Space.s) {
                             IconlyIcon(.folder, .chip)
                             Text(folder.name)
                                 .lineLimit(1)
                                 .fontDesign(.rounded)
                         }
-                        .padding(.horizontal, 4.0)
+                        .padding(.horizontal, Space.xs)
                     }
                     .accessibilityLabel("Folder \(folder.name)")
                 }
@@ -120,7 +120,7 @@ struct ContentView: View {
                     } label: {
                         MoreMenuLabel(colorScheme: colorScheme)
                     }
-                    .tint(Color.primary)
+                    .tint(Color.ink)
                     .accessibilityLabel("Chat Options")
                 }
             }
@@ -155,10 +155,10 @@ struct ContentView: View {
             // The circle is a backdrop, not padding, so the button
             // stays the menu button's size and its glass stays round.
             IconlyIcon(.incognito, .action)
-                .foregroundStyle(chatVM.isIncognito ? Color.appBackground : Color.primary)
+                .foregroundStyle(chatVM.isIncognito ? Color.surfaceBase : Color.textPrimary)
                 .background {
                     Circle()
-                        .fill(chatVM.isIncognito ? Color.primary : Color.clear)
+                        .fill(chatVM.isIncognito ? Color.ink : Color.clear)
                         .frame(width: 36.0, height: 36.0)
                 }
         }
@@ -169,7 +169,7 @@ struct ContentView: View {
     private var emptyChat: some View {
         // Rechecked each minute, so the greeting turns over on time.
         TimelineView(.everyMinute) { context in
-            VStack(spacing: 20.0) {
+            VStack(spacing: Space.xxl) {
                 LiveMark(isAlive: serverVM.isReachable)
                 // A quiet caption under the mark, not a second headline.
                 Text(chatVM.isIncognito ? "THIS CHAT WON'T BE SAVED" : Greeting.text(for: context.date))
@@ -206,7 +206,7 @@ struct PushedChatView: View {
 
     var body: some View {
         ZStack {
-            Color.appBackground.ignoresSafeArea()
+            Color.surfaceBase.ignoresSafeArea()
             if let chat = chats.first {
                 ContentView(push: push, pushedChat: chat)
             }

@@ -45,6 +45,6 @@ struct ModelDetailsView: View {
             }
         }
         .toolbarTitleDisplayMode(.inline)
-        .tint(Color.primary)
+        .tint(Color.ink)
     }
 }

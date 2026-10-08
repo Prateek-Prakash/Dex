@@ -35,7 +35,7 @@ struct OrganizeView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .background(Color.appBackground.ignoresSafeArea())
+            .background(Color.surfaceBase.ignoresSafeArea())
             .sensoryFeedback(.selection, trigger: chat.folder?.id)
             .navigationTitle("Organize")
             .toolbarTitleDisplayMode(.inline)
@@ -59,7 +59,7 @@ struct OrganizeView: View {
             }
             .folderCreationAlert(isPresented: $isCreating)
         }
-        .tint(Color.primary)
+        .tint(Color.ink)
     }
 }
 

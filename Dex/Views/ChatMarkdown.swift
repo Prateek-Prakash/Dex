@@ -69,11 +69,11 @@ enum Callout: String, CaseIterable {
     /// GitHub's alert colors.
     var color: Color {
         switch self {
-        case .note: Color(light: 0x0969DA, dark: 0x4493F8)
-        case .tip: Color(light: 0x1A7F37, dark: 0x3FB950)
-        case .important: Color(light: 0x8250DF, dark: 0xAB7DF8)
-        case .warning: Color(light: 0x9A6700, dark: 0xD29922)
-        case .caution: Color(light: 0xCF222E, dark: 0xF85149)
+        case .note: Color.calloutNote
+        case .tip: Color.calloutTip
+        case .important: Color.calloutImportant
+        case .warning: Color.calloutWarning
+        case .caution: Color.calloutCaution
         }
     }
 
@@ -125,7 +125,7 @@ enum ChatMarkdown {
         // The app's tint is the text color: links get the system link blue,
         // underlined, so they read apart from underlined text.
         for run in parsed.runs where run.link != nil {
-            parsed[run.range].foregroundColor = Color(uiColor: .link)
+            parsed[run.range].foregroundColor = Color.link
             parsed[run.range].underlineStyle = .single
         }
 
@@ -389,11 +389,12 @@ struct ChatMarkdownView: View, Equatable {
     }
 
     /// Text drawn with its inline formulas, which take the text's size.
-    private func line(_ text: AttributedString, size: CGFloat, color: UIColor = .label) -> Text {
+    private func line(_ text: AttributedString, size: CGFloat, color: UIColor = .textPrimary) -> Text {
         Text.chat(text, size: size, color: ink(color))
     }
 
     var body: some View {
+        // spacing: between reply blocks, between the m and l steps by design
         VStack(alignment: .leading, spacing: 10.0) {
             ForEach(Array(ChatMarkdown.blocks(from: text).enumerated()), id: \.offset) { _, block in
                 view(for: block)
@@ -402,7 +403,7 @@ struct ChatMarkdownView: View, Equatable {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .textRenderer(InlineCodeRenderer(fill: .inlineCodeFill, border: .inlineCodeBorder,
+        .textRenderer(InlineCodeRenderer(fill: .surfaceCode, border: .borderSubtle,
                                          hairline: 1.0 / displayScale))
     }
 
@@ -415,9 +416,9 @@ struct ChatMarkdownView: View, Equatable {
             line(text, size: level <= 1 ? title3Size : level == 2 ? bodySize : subheadlineSize)
                 .font(level <= 1 ? .title3 : level == 2 ? .headline : .subheadline)
                 .fontWeight(.bold)
-                .padding(.top, 4.0)
+                .padding(.top, Space.xs)
         case .listItem(let marker, let depth, let text):
-            HStack(alignment: .firstTextBaseline, spacing: 6.0) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                 Text(marker)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
@@ -426,7 +427,7 @@ struct ChatMarkdownView: View, Equatable {
             }
             .padding(.leading, CGFloat(depth - 1) * 18.0)
         case .task(let checked, let depth, let text):
-            HStack(alignment: .firstTextBaseline, spacing: 8.0) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.m) {
                 TaskBox(isChecked: checked, size: bodySize)
                 line(text, size: bodySize)
             }
@@ -434,20 +435,20 @@ struct ChatMarkdownView: View, Equatable {
             .accessibilityElement(children: .combine)
             .accessibilityValue(checked ? "Done" : "Not Done")
         case .quote(let text):
-            line(text, size: bodySize, color: .secondaryLabel)
+            line(text, size: bodySize, color: .textSecondary)
                 .foregroundStyle(.secondary)
-                .padding(.leading, 12.0)
+                .padding(.leading, Space.l)
                 .overlay(alignment: .leading) {
-                    Capsule().fill(Color.drawerBorder).frame(width: 3.0)
+                    Capsule().fill(Color.border).frame(width: 3.0)
                 }
         case .code(let language, let code):
             CodeBlockView(language: language, code: code)
         case .table(let header, let rows, let alignments):
             table(header: header, rows: rows, alignments: alignments)
         case .math(let latex):
-            ChatMathBlockView(latex: latex, size: bodySize, color: ink(.label))
+            ChatMathBlockView(latex: latex, size: bodySize, color: ink(.textPrimary))
         case .callout(let callout, let children):
-            VStack(alignment: .leading, spacing: 8.0) {
+            VStack(alignment: .leading, spacing: Space.m) {
                 Text(callout.title)
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -458,20 +459,21 @@ struct ChatMarkdownView: View, Equatable {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.vertical, 12.0)
+            .padding(.vertical, Space.l)
+            // spacing: a callout's text clears its 3pt bar by 12
             .padding(.leading, 15.0)
-            .padding(.trailing, 12.0)
+            .padding(.trailing, Space.l)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(callout.color.opacity(0.08))
             .overlay(alignment: .leading) {
                 Rectangle().fill(callout.color).frame(width: 3.0)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 12.0, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
         case .rule:
             Rectangle()
-                .fill(Color.drawerBorder)
+                .fill(Color.border)
                 .frame(height: 1.0)
-                .padding(.vertical, 6.0)
+                .padding(.vertical, Space.s)
         }
     }
 
@@ -481,7 +483,7 @@ struct ChatMarkdownView: View, Equatable {
                 if !header.isEmpty {
                     GridRow {
                         ForEach(Array(header.enumerated()), id: \.offset) { column, cell in
-                            line(cell, size: subheadlineSize, color: .secondaryLabel)
+                            line(cell, size: subheadlineSize, color: .textSecondary)
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(.secondary)
@@ -489,7 +491,7 @@ struct ChatMarkdownView: View, Equatable {
                                 .gridColumnAlignment(alignment(alignments, column))
                         }
                     }
-                    Rectangle().fill(Color.drawerBorder).frame(height: 1.0).gridCellUnsizedAxes(.horizontal)
+                    Rectangle().fill(Color.border).frame(height: 1.0).gridCellUnsizedAxes(.horizontal)
                 }
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
@@ -503,9 +505,9 @@ struct ChatMarkdownView: View, Equatable {
                     }
                 }
             }
-            .padding(12.0)
+            .padding(Space.l)
         }
-        .background(Color.composerChip, in: RoundedRectangle(cornerRadius: 12.0, style: .continuous))
+        .background(Color.surfaceRaised, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
     }
 
     private func alignment(_ alignments: [TableAlignment], _ column: Int) -> HorizontalAlignment {
@@ -537,9 +539,9 @@ struct CodeBlockView: View {
             Text(shown)
                 .font(.system(.callout, design: .monospaced))
                 .textSelection(.enabled)
-                .padding(12.0)
+                .padding(Space.l)
         }
-        .background(Color.composerChip, in: RoundedRectangle(cornerRadius: 12.0, style: .continuous))
+        .background(Color.surfaceRaised, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
         .task(id: CodeColoring.Key(code: code, language: language, isDark: colorScheme == .dark)) {
             let key = CodeColoring.Key(code: code, language: language, isDark: colorScheme == .dark)
             if let hit = CodeColoring.cached(key) {
@@ -628,12 +630,12 @@ private struct TaskBox: View {
         let side = size * 0.9
         ZStack {
             RoundedRectangle(cornerRadius: side * 0.25, style: .continuous)
-                .fill(isChecked ? Color.primary : Color.clear)
+                .fill(isChecked ? Color.ink : Color.clear)
             RoundedRectangle(cornerRadius: side * 0.25, style: .continuous)
-                .strokeBorder(isChecked ? Color.primary : Color.secondary, lineWidth: 1.5)
+                .strokeBorder(isChecked ? Color.ink : Color.textSecondary, lineWidth: 1.5)
             if isChecked {
                 Checkmark()
-                    .stroke(Color.appBackground, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                    .stroke(Color.surfaceBase, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
                     .padding(side * 0.24)
             }
         }

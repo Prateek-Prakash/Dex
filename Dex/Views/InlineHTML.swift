@@ -48,8 +48,8 @@ enum InlineHTML {
         "dfn", "bdi", "bdo", "wbr", "label", "center", "nobr", "data", "output",
     ]
 
-    /// `<mark>`'s highlight, a soft yellow in either appearance.
-    static let highlight = Color(light: 0xFCEFA1, dark: 0x5C4E12)
+    /// `<mark>`'s highlight.
+    static let highlight = Color.textHighlight
 
     static func apply(to text: inout AttributedString) {
         guard text.runs.contains(where: isHTML) else { return }

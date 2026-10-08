@@ -16,17 +16,17 @@ struct PillButton: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8.0) {
+            HStack(spacing: Space.m) {
                 IconlyIcon(icon, .row)
                 Text(title)
                     .font(.body)
                     .fontWeight(.medium)
                     .fontDesign(.rounded)
             }
-            .foregroundStyle(Color.appBackground)
-            .padding(.horizontal, 20.0)
+            .foregroundStyle(Color.surfaceBase)
+            .padding(.horizontal, Space.xxl)
             .frame(height: 48.0)
-            .background(Color.primary, in: Capsule())
+            .background(Color.ink, in: Capsule())
         }
         .buttonStyle(.plain)
     }

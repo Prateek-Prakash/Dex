@@ -68,7 +68,7 @@ struct RootView: View {
             ZStack(alignment: .leading) {
                 // Under everything: the drawer is narrower than the screen,
                 // and the main screen's rounded corners uncover the rest.
-                Color.drawerBackground
+                Color.surfaceDrawer
                     .ignoresSafeArea()
                 
                 // Full width, so its top bar (glass and line) runs on under
@@ -116,7 +116,7 @@ struct RootView: View {
                         }
                     }
                 }
-                .tint(Color.primary)
+                .tint(Color.ink)
                 .onChange(of: routes) { old, new in
                     holdChatUnderRoutes(old: old, new: new)
                 }
@@ -125,11 +125,11 @@ struct RootView: View {
                     .environmentObject(chatVM)
                     .allowsHitTesting(!isDrawerOpen)
                     // Opaque, or the drawer shows through the placeholder.
-                    .background(Color.appBackground.ignoresSafeArea())
+                    .background(Color.surfaceBase.ignoresSafeArea())
                     // Faded, not dimmed, like Claude: content washes toward
                     // the background while the drawer is open.
                     .overlay {
-                        Color.drawerFade
+                        Color.surfaceFade
                             .opacity(0.45 * progress)
                             .ignoresSafeArea()
                             .allowsHitTesting(isDrawerOpen)
@@ -143,11 +143,11 @@ struct RootView: View {
                     }
                     .overlay {
                         RoundedRectangle(cornerRadius: cornerRadius * progress, style: .continuous)
-                            .strokeBorder(Color.drawerBorder.opacity(progress), lineWidth: 1.0 / displayScale)
+                            .strokeBorder(Color.border.opacity(progress), lineWidth: 1.0 / displayScale)
                             .ignoresSafeArea()
                             .allowsHitTesting(false)
                     }
-                    .shadow(color: .black.opacity(0.08 * progress), radius: 12.0)
+                    .shadow(color: Color.shadow.opacity(0.08 * progress), radius: 12.0)
                     .offset(x: offset)
             }
             .simultaneousGesture(drag(width: width))
@@ -168,7 +168,7 @@ struct RootView: View {
             SettingsView()
                 .environmentObject(serverVM)
                 .environmentObject(serverVM.models)
-                .presentationBackground(Color.settingsBackground)
+                .presentationBackground(Color.surfaceBase)
         }
     }
 

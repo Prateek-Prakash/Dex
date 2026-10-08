@@ -20,7 +20,7 @@ struct ChatTranscriptView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 24.0) {
+                LazyVStack(alignment: .leading, spacing: Space.xxxl) {
                     ForEach(chatVM.messages) { message in
                         switch message.role {
                         case .user, .system:
@@ -33,8 +33,8 @@ struct ChatTranscriptView: View {
                         .frame(height: 1.0)
                         .id(Self.bottomID)
                 }
-                .padding(.horizontal, 20.0)
-                .padding(.vertical, 16.0)
+                .padding(.horizontal, Space.xxl)
+                .padding(.vertical, Space.xl)
             }
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.bottom)
@@ -66,9 +66,10 @@ private struct UserBubble: View {
         HStack {
             Spacer(minLength: 48.0)
             Text(text)
-                .padding(.horizontal, 16.0)
+                .padding(.horizontal, Space.xl)
+                // spacing: a bubble's top and bottom, between the m and l steps by design
                 .padding(.vertical, 10.0)
-                .background(Color.composerChip, in: RoundedRectangle(cornerRadius: 20.0, style: .continuous))
+                .background(Color.surfaceRaised, in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
                 .contextMenu {
                     Button("Copy") {
                         UIPasteboard.general.string = text
@@ -89,7 +90,7 @@ private struct ReplyView: View {
     @State private var showsThinking: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12.0) {
+        VStack(alignment: .leading, spacing: Space.l) {
             if let thinking = message.thinking {
                 thinkingSection(thinking)
             }
@@ -112,13 +113,13 @@ private struct ReplyView: View {
 
     /// The model's reasoning, folded away under a "Thinking" row.
     private func thinkingSection(_ thinking: String) -> some View {
-        VStack(alignment: .leading, spacing: 8.0) {
+        VStack(alignment: .leading, spacing: Space.m) {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     showsThinking.toggle()
                 }
             } label: {
-                HStack(spacing: 6.0) {
+                HStack(spacing: Space.s) {
                     Text(isThinking ? "Thinking" : "Thought Process")
                         .font(.subheadline)
                         .fontDesign(.rounded)
@@ -133,9 +134,9 @@ private struct ReplyView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
-                    .padding(.leading, 12.0)
+                    .padding(.leading, Space.l)
                     .overlay(alignment: .leading) {
-                        Capsule().fill(Color.drawerBorder).frame(width: 2.0)
+                        Capsule().fill(Color.border).frame(width: 2.0)
                     }
             }
         }
@@ -150,16 +151,16 @@ private struct ReplyView: View {
     private var footer: some View {
         switch message.status {
         case .failed:
-            VStack(alignment: .leading, spacing: 8.0) {
+            VStack(alignment: .leading, spacing: Space.m) {
                 Text(message.error ?? "Something went wrong.")
                     .font(.subheadline)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.destructive)
                 if isLast {
                     retryButton
                 }
             }
         case .stopped:
-            HStack(spacing: 12.0) {
+            HStack(spacing: Space.l) {
                 Text("Stopped")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -176,16 +177,16 @@ private struct ReplyView: View {
         Button {
             chatVM.retry(client: serverVM.client, model: modelsVM.pickedModel)
         } label: {
-            HStack(spacing: 6.0) {
+            HStack(spacing: Space.s) {
                 IconlyIcon(.refresh, .inlineButton)
                 Text("Retry")
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .fontDesign(.rounded)
             }
-            .padding(.horizontal, 12.0)
-            .padding(.vertical, 6.0)
-            .background(Color.composerChip, in: Capsule())
+            .padding(.horizontal, Space.l)
+            .padding(.vertical, Space.s)
+            .background(Color.surfaceRaised, in: Capsule())
         }
         .buttonStyle(.plain)
     }
@@ -196,7 +197,7 @@ private struct WaitingDots: View {
     var body: some View {
         TimelineView(.animation) { context in
             let time = context.date.timeIntervalSinceReferenceDate
-            HStack(spacing: 6.0) {
+            HStack(spacing: Space.s) {
                 ForEach(0..<3) { index in
                     Circle()
                         .frame(width: 8.0, height: 8.0)

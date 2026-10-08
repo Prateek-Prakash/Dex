@@ -84,7 +84,7 @@ struct DrawerView: View {
             .environment(\.defaultMinListRowHeight, Self.rowHeight)
             .safeAreaPadding(.trailing, sliver)
             .scrollContentBackground(.hidden)
-            .background(Color.drawerBackground.ignoresSafeArea())
+            .background(Color.surfaceDrawer.ignoresSafeArea())
             // A fixed title, not the system one, which shrinks on scroll.
             // The list scrolls under the bar, which turns to glass.
             .toolbar {
@@ -110,19 +110,19 @@ struct DrawerView: View {
                         openSettings()
                     } label: {
                         IconlyIcon(.settings, .action)
-                            .padding(12.0)
+                            .padding(Space.l)
                             .glassCircle()
                     }
                     .buttonStyle(.plain)
                     Spacer()
                     PillButton(icon: .add, title: "New Session", action: newSession)
                 }
-                .padding(.horizontal, 16.0)
+                .padding(.horizontal, Space.xl)
                 // The drawer is full width; keep clear of the main screen's sliver.
                 .padding(.trailing, sliver)
             }
         }
-        .tint(Color.primary)
+        .tint(Color.ink)
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15))
@@ -157,7 +157,7 @@ struct DrawerView: View {
         Text(header)
             .font(.system(size: headerTextSize, design: .rounded))
             .foregroundStyle(.secondary)
-            .padding(.top, 16.0)
+            .padding(.top, Space.xl)
             .listRowSeparator(.hidden)
             .listRowInsets(rowInsets)
             .listRowBackground(Color.clear)
@@ -199,8 +199,9 @@ struct DrawerView: View {
     /// drawer's color, so a lifted row reads clear.
     private func row(_ icon: Iconly, _ title: String, isSelected: Bool, isReplying: Bool = false,
                      action: @escaping () -> Void) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 12.0, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Radius.block, style: .continuous)
         return Button(action: action) {
+            // spacing: icon to title, between the l and xl steps by design
             HStack(spacing: 14.0) {
                 IconlyIcon(icon, .tile)
                 Text(title)
@@ -215,7 +216,7 @@ struct DrawerView: View {
             }
             .padding(.horizontal, Self.highlightPadding)
             .frame(maxWidth: .infinity, minHeight: Self.rowHeight, alignment: .leading)
-            .background(isSelected ? Color.drawerSelection : Color.drawerBackground, in: shape)
+            .background(isSelected ? Color.surfaceSelected : Color.surfaceDrawer, in: shape)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

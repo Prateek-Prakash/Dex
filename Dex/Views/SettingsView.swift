@@ -80,7 +80,7 @@ struct SettingsView: View {
             }
             .toolbarTitleDisplayMode(.inline)
         }
-        .tint(Color.primary)
+        .tint(Color.ink)
     }
 }
 

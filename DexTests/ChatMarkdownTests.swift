@@ -403,7 +403,7 @@ struct ChatMarkdownTests {
     func linkColor() throws {
         let text = try paragraph("See [Ollama](https://ollama.com).")
         let link = try #require(text.runs.first { $0.link != nil })
-        #expect(link.foregroundColor == Color(uiColor: .link))
+        #expect(link.foregroundColor == Color.link)
         #expect(link.underlineStyle != nil)
     }
 

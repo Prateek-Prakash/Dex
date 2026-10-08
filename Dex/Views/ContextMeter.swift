@@ -21,7 +21,7 @@ struct ContextMeter: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.contextTrack, lineWidth: 1.5)
+                .stroke(Color.track, lineWidth: 1.5)
             Circle()
                 .trim(from: 0.0, to: share)
                 .stroke(Self.level(share).color,
@@ -42,9 +42,9 @@ struct ContextMeter: View {
 
         var color: Color {
             switch self {
-            case .normal: Color.contextRing
-            case .warning: Color.orange
-            case .critical: Color.red
+            case .normal: Color.accent
+            case .warning: Color.warning
+            case .critical: Color.destructive
             }
         }
     }

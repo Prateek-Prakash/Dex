@@ -21,13 +21,13 @@ extension View {
     /// A settings list's own background, in place of the system one.
     func settingsList() -> some View {
         scrollContentBackground(.hidden)
-            .background(Color.settingsBackground.ignoresSafeArea())
+            .background(Color.surfaceBase.ignoresSafeArea())
     }
     
     /// Rows on settings cards: card fill and divider color.
-    func settingsRows(background: Color = .settingsCard) -> some View {
+    func settingsRows(background: Color = .surfaceCard) -> some View {
         listRowBackground(background)
-            .listRowSeparatorTint(.settingsSeparator)
+            .listRowSeparatorTint(.separator)
     }
     
     /// A rounded Liquid Glass surface, or a material one before iOS 26.
