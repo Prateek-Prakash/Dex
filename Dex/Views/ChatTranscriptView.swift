@@ -8,12 +8,20 @@
 import SwiftUI
 
 /// The open chat's messages: the user's in bubbles on the right, replies
-/// full width as Markdown. Follows a growing reply while it is scrolled to
-/// the bottom; scrolling up to read leaves it there.
+/// full width as Markdown. Follows whatever grows at the bottom (a reply's
+/// answer, its thinking, a Thinking row opened) until the reader scrolls up
+/// to read; scrolling back to the end, or sending, follows again.
 struct ChatTranscriptView: View {
     @EnvironmentObject var chatVM: ChatVM
 
-    @State private var isAtBottom: Bool = true
+    /// Keeps the bottom in view. Only the reader's own scroll turns it off:
+    /// content growing faster than the view keeps up must not count as
+    /// scrolling up.
+    @State private var isFollowing: Bool = true
+    @State private var scrollPhase: ScrollPhase = .idle
+    /// True while this view animates to the bottom itself: that scroll
+    /// passes through "not at the bottom" without being the reader's.
+    @State private var isScrollingToBottom = false
 
     private static let bottomID = "bottom"
 
@@ -38,20 +46,40 @@ struct ChatTranscriptView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.bottom)
+            .onScrollPhaseChange { _, phase in
+                scrollPhase = phase
+                // The reader's finger takes over from any scroll of ours.
+                if phase == .interacting { isScrollingToBottom = false }
+                guard phase == .idle else { return }
+                isScrollingToBottom = false
+                // Growth that came while it was moving.
+                if isFollowing { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+            }
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 40.0
             } action: { _, atBottom in
-                isAtBottom = atBottom
+                if atBottom {
+                    isFollowing = true
+                } else if scrollPhase != .idle, !isScrollingToBottom {
+                    // The reader's scroll: a drag, a fling, a status bar tap.
+                    isFollowing = false
+                }
             }
-            // A new message always comes into view; a growing reply only
-            // while the reader is at the bottom.
-            .onChange(of: chatVM.messages.count) {
-                withAnimation(.easeOut(duration: 0.2)) {
+            // Anything growing at the bottom, while following: the answer,
+            // its thinking, a Thinking row opened.
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentSize.height
+            } action: { _, _ in
+                if isFollowing, scrollPhase == .idle {
                     proxy.scrollTo(Self.bottomID, anchor: .bottom)
                 }
             }
-            .onChange(of: chatVM.messages.last?.content) {
-                if isAtBottom {
+            // A new message always comes into view, and follows again; by the
+            // last message's id, so a retry (one reply for another) counts.
+            .onChange(of: chatVM.messages.last?.id) {
+                isFollowing = true
+                isScrollingToBottom = true
+                withAnimation(.easeOut(duration: 0.2)) {
                     proxy.scrollTo(Self.bottomID, anchor: .bottom)
                 }
             }
