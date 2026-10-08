@@ -21,6 +21,9 @@ struct ComposerView: View {
 
     @State private var message: String = ""
     @StateObject private var dictation = Dictation()
+    /// Rebuilds the text field after each send: iOS can leave a multi-line
+    /// field showing text it was told to clear, mid keyboard suggestion.
+    @State private var fieldID = UUID()
     /// The box's text when dictation started; heard words follow it.
     @State private var textBeforeDictation: String = ""
     /// What dictation last put in the box, to tell typing apart from it.
@@ -29,6 +32,7 @@ struct ComposerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.l) {
             TextField("Ask Dex", text: $message, axis: .vertical)
+                .id(fieldID)
                 .lineLimit(1...6)
                 .focused(isFocused)
                 .fontDesign(.rounded)
@@ -180,6 +184,12 @@ struct ComposerView: View {
         guard canSend else { return }
         chatVM.send(message, client: serverVM.client, model: modelsVM.pickedModel)
         message = ""
+        let wasFocused = isFocused.wrappedValue
+        fieldID = UUID()
+        // Once the new field exists; the old one took focus with it.
+        if wasFocused {
+            DispatchQueue.main.async { isFocused.wrappedValue = true }
+        }
     }
 }
 

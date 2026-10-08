@@ -239,3 +239,49 @@ extension StubbedNetworkTests {
         }
     }
 }
+
+/// The transcript's scroll rules: turns, what's pinned, the room left for
+/// a reply, the end, and what stops following.
+struct TranscriptLayoutTests {
+    private func message(_ role: ChatMessage.Role, _ sequence: Int, _ status: ChatMessage.Status = .done) -> ChatMessage {
+        ChatMessage(role: role, content: "\(sequence)", sequence: sequence, status: status)
+    }
+
+    @Test func turnsGroupEachMessageWithItsReplies() {
+        let a = message(.user, 0), b = message(.assistant, 1), c = message(.user, 2), d = message(.assistant, 3)
+        #expect(TranscriptLayout.turns([a, b, c, d]).map { $0.map(\.sequence) } == [[0, 1], [2, 3]])
+        #expect(TranscriptLayout.turns([a, c]).map { $0.map(\.sequence) } == [[0], [2]])
+        #expect(TranscriptLayout.turns([]).isEmpty)
+    }
+
+    @Test func theMessageSentIsPinnedWhileItsReplyComes() {
+        let first = message(.user, 0), reply = message(.assistant, 1)
+        let next = message(.user, 2), coming = message(.assistant, 3, .streaming)
+        #expect(TranscriptLayout.pinTarget([first, reply, next, coming]) == next.id)
+        // An opened chat, its replies done: nothing to pin.
+        #expect(TranscriptLayout.pinTarget([first, reply]) == nil)
+        #expect(TranscriptLayout.pinTarget([]) == nil)
+    }
+
+    @Test func roomShrinksToNothingAsTheReplyGrows() {
+        #expect(TranscriptLayout.room(viewport: 600, turn: 100, padding: 16) == 484)
+        #expect(TranscriptLayout.room(viewport: 600, turn: 584, padding: 16) == 0)
+        #expect(TranscriptLayout.room(viewport: 600, turn: 900, padding: 16) == 0)
+    }
+
+    @Test func theEndIgnoresTheAreaUnderTheComposer() {
+        // Scrolled to the end: the visible rect runs on under the composer.
+        #expect(TranscriptLayout.isAtBottom(visibleMaxY: 1145, bottomInset: 145, contentHeight: 1000))
+        // The newest lines under the composer: not at the end.
+        #expect(!TranscriptLayout.isAtBottom(visibleMaxY: 1000, bottomInset: 145, contentHeight: 1000 + 145))
+        // A line or two short still counts.
+        #expect(TranscriptLayout.isAtBottom(visibleMaxY: 1095, bottomInset: 145, contentHeight: 1000))
+    }
+
+    @Test func onlyTheReadersScrollUpStopsFollowing() {
+        #expect(TranscriptLayout.stopsFollowing(from: 500, to: 480, isReaderScrolling: true))
+        #expect(!TranscriptLayout.stopsFollowing(from: 500, to: 520, isReaderScrolling: true))
+        // Growth, or this view's own scroll, never does.
+        #expect(!TranscriptLayout.stopsFollowing(from: 500, to: 480, isReaderScrolling: false))
+    }
+}

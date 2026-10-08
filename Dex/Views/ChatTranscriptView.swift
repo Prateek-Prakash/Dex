@@ -8,83 +8,252 @@
 import SwiftUI
 
 /// The open chat's messages: the user's in bubbles on the right, replies
-/// full width as Markdown. Follows whatever grows at the bottom (a reply's
-/// answer, its thinking, a Thinking row opened) until the reader scrolls up
-/// to read; scrolling back to the end, or sending, follows again.
+/// full width as Markdown. Like Claude: each message sent is pinned to the
+/// top, its reply growing below it into the room left and on past the
+/// composer. Whenever the end is out of view a jump arrow shows; it, and
+/// only it, scrolls to the end and follows (answer and thinking) until the
+/// reader scrolls up.
+///
+/// A plain VStack, not a lazy one, gives the scroll view real heights:
+/// lazy height guesses jumped on each message and sent scrolls into blank
+/// space.
 struct ChatTranscriptView: View {
     @EnvironmentObject var chatVM: ChatVM
 
-    /// Keeps the bottom in view. Only the reader's own scroll turns it off:
-    /// content growing faster than the view keeps up must not count as
-    /// scrolling up.
-    @State private var isFollowing: Bool = true
+    /// Keeps the end in view: set by the jump arrow only, cleared by the
+    /// reader's own scroll up.
+    @State private var isFollowing: Bool = false
     @State private var scrollPhase: ScrollPhase = .idle
-    /// True while this view animates to the bottom itself: that scroll
-    /// passes through "not at the bottom" without being the reader's.
-    @State private var isScrollingToBottom = false
+    @State private var position = ScrollPosition(edge: .bottom)
+    /// True while this view animates a scroll itself, so it never counts
+    /// as the reader's.
+    @State private var isScrollingItself = false
+    /// Within reach of the end, by the latest geometry.
+    @State private var isNearBottom = true
+    /// The message pinned to the top: the last one sent here.
+    @State private var pinnedID: UUID?
+    /// The pinned message and its replies' height, and the height between
+    /// the toolbar and the composer: what's left is room for the reply.
+    @State private var pinnedTurnHeight: CGFloat = 0
+    /// The tallest viewport seen: the keyboard shrinks it while a message
+    /// is sent, and room sized for that left the message short of the top.
+    /// Too much room is harmless; it shrinks as the reply grows.
+    @State private var viewportHeight: CGFloat = 0
+    /// Keeps the pinned message at the top while the screen settles: the
+    /// keyboard going away after a send grows the viewport, and the room
+    /// with it. Ends when the reader touches the list or the reply fills it.
+    @State private var isAligningPin = false
 
-    private static let bottomID = "bottom"
+    private var room: CGFloat {
+        guard pinnedID != nil else { return 0 }
+        return TranscriptLayout.room(viewport: viewportHeight, turn: pinnedTurnHeight, padding: Space.xl)
+    }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Space.xxxl) {
-                    ForEach(chatVM.messages) { message in
-                        switch message.role {
-                        case .user, .system:
-                            UserBubble(text: message.content)
-                        case .assistant:
-                            ReplyView(message: message, isLast: message.id == chatVM.messages.last?.id)
+        ScrollView {
+            // Turns xxxl apart: m between them plus each one's own xl on top.
+            VStack(alignment: .leading, spacing: Space.m) {
+                ForEach(TranscriptLayout.turns(chatVM.messages), id: \.[0].id) { turn in
+                    VStack(alignment: .leading, spacing: Space.xxxl) {
+                        ForEach(turn) { message in
+                            switch message.role {
+                            case .user, .system:
+                                UserBubble(text: message.content)
+                            case .assistant:
+                                ReplyView(message: message, isLast: message.id == chatVM.messages.last?.id)
+                            }
                         }
                     }
-                    Color.clear
-                        .frame(height: 1.0)
-                        .id(Self.bottomID)
+                    // Part of the turn, so a pinned message keeps it above,
+                    // clear of the toolbar.
+                    .padding(.top, Space.xl)
+                    .id(turn[0].id)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                        if turn[0].id == pinnedID { pinnedTurnHeight = height }
+                    }
                 }
-                .padding(.horizontal, Space.xxl)
-                .padding(.vertical, Space.xl)
+                // Room for the pinned message's reply to grow into.
+                Color.clear
+                    .frame(height: room)
             }
-            .scrollDismissesKeyboard(.interactively)
-            .defaultScrollAnchor(.bottom)
-            .onScrollPhaseChange { _, phase in
-                scrollPhase = phase
-                // The reader's finger takes over from any scroll of ours.
-                if phase == .interacting { isScrollingToBottom = false }
-                guard phase == .idle else { return }
-                isScrollingToBottom = false
-                // Growth that came while it was moving.
-                if isFollowing { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+            .padding(.horizontal, Space.xxl)
+            // The first turn's own top padding stands in at the top.
+            .padding(.bottom, Space.xl)
+            .scrollTargetLayout()
+        }
+        .scrollPosition($position)
+        .scrollDismissesKeyboard(.interactively)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .onScrollPhaseChange { _, phase in
+            scrollPhase = phase
+            if phase == .interacting {
+                isScrollingItself = false
+                isAligningPin = false
             }
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 40.0
-            } action: { _, atBottom in
-                if atBottom {
-                    isFollowing = true
-                } else if scrollPhase != .idle, !isScrollingToBottom {
-                    // The reader's scroll: a drag, a fling, a status bar tap.
-                    isFollowing = false
+            guard phase == .idle else { return }
+            isScrollingItself = false
+            // The pin's own animation may have aimed short of a room that
+            // grew meanwhile (the keyboard going away).
+            if isAligningPin, let pinnedID { position.scrollTo(id: pinnedID, anchor: .top) }
+            // Growth that came while it was moving.
+            if isFollowing, room == 0 { position.scrollTo(edge: .bottom) }
+        }
+        // Following past the room: each growth brings the end into view.
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, _ in
+            if isFollowing, room == 0, scrollPhase == .idle {
+                position.scrollTo(edge: .bottom)
+            }
+        }
+        .onScrollGeometryChange(for: TranscriptScroll.self) { geometry in
+            TranscriptScroll(
+                offset: geometry.contentOffset.y,
+                // The reply's end, not the empty room below it.
+                isAtBottom: TranscriptLayout.isAtBottom(
+                    visibleMaxY: geometry.visibleRect.maxY, bottomInset: geometry.contentInsets.bottom,
+                    contentHeight: geometry.contentSize.height - room),
+                viewport: max(0, geometry.containerSize.height - geometry.contentInsets.top - geometry.contentInsets.bottom)
+            )
+        } action: { old, new in
+            isNearBottom = new.isAtBottom
+            viewportHeight = max(viewportHeight, new.viewport)
+            // The reader's scroll up (a drag, a fling, a status bar tap).
+            if TranscriptLayout.stopsFollowing(from: old.offset, to: new.offset,
+                                               isReaderScrolling: scrollPhase != .idle && !isScrollingItself) {
+                isFollowing = false
+            }
+        }
+        .onChange(of: room) { _, room in
+            guard isAligningPin, let pinnedID else { return }
+            if room == 0 {
+                isAligningPin = false
+            } else if scrollPhase == .idle {
+                position.scrollTo(id: pinnedID, anchor: .top)
+            }
+        }
+        // One handler for both, since opening a chat changes the chat and
+        // its messages at once: another chat shows its end, nothing pinned;
+        // a message sent here (its reply streaming) is pinned to the top.
+        .onChange(of: PinKey(chatID: chatVM.chat?.id, target: TranscriptLayout.pinTarget(chatVM.messages))) { old, new in
+            if let oldChat = old.chatID, oldChat != new.chatID {
+                pinnedID = nil
+                isAligningPin = false
+                isFollowing = false
+                position.scrollTo(edge: .bottom)
+            } else if let target = new.target, target != pinnedID {
+                pin(target)
+            }
+        }
+        .onAppear {
+            if let target = TranscriptLayout.pinTarget(chatVM.messages) { pin(target) }
+        }
+        .overlay(alignment: .bottom) {
+            // Whenever the end is out of view.
+            if !isNearBottom {
+                Button(action: follow) {
+                    IconlyIcon(.arrowDown, .field)
+                        .padding(Space.m)
+                        .glassCircle()
                 }
+                .buttonStyle(.plain)
+                .padding(.bottom, Space.xs)
+                .transition(.opacity)
+                .accessibilityLabel("Scroll to End")
             }
-            // Anything growing at the bottom, while following: the answer,
-            // its thinking, a Thinking row opened.
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentSize.height
-            } action: { _, _ in
-                if isFollowing, scrollPhase == .idle {
-                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                }
-            }
-            // A new message always comes into view, and follows again; by the
-            // last message's id, so a retry (one reply for another) counts.
-            .onChange(of: chatVM.messages.last?.id) {
-                isFollowing = true
-                isScrollingToBottom = true
-                withAnimation(.easeOut(duration: 0.2)) {
-                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                }
+        }
+        .animation(.easeOut(duration: 0.2), value: isNearBottom)
+    }
+
+    /// Pins a message to the top; its reply grows below, not followed. The room starts at
+    /// a full screen (the last turn's height would leave none, and the
+    /// message could only scroll partway up), and the scroll waits a layout
+    /// pass for that room to exist; it then shrinks as the reply grows.
+    private func pin(_ id: UUID) {
+        pinnedTurnHeight = 0
+        pinnedID = id
+        isAligningPin = true
+        isFollowing = false
+        isScrollingItself = true
+        DispatchQueue.main.async {
+            // Superseded meanwhile (another chat opened): leave it.
+            guard pinnedID == id else { return }
+            withAnimation(.easeOut(duration: 0.25)) {
+                position.scrollTo(id: id, anchor: .top)
             }
         }
     }
+
+    /// The jump arrow: to the reply's end, following from there. While
+    /// the pinned turn still has room below, that end is on screen with
+    /// the message pinned; the bottom edge would be blank room.
+    private func follow() {
+        isAligningPin = false
+        isFollowing = true
+        isScrollingItself = true
+        withAnimation(.easeOut(duration: 0.2)) {
+            if room > 0, let pinnedID {
+                position.scrollTo(id: pinnedID, anchor: .top)
+            } else {
+                position.scrollTo(edge: .bottom)
+            }
+        }
+    }
+}
+
+/// The transcript's scroll rules, kept pure so they can be tested.
+enum TranscriptLayout {
+    /// How close to the end counts as there: a reply can grow a line or two
+    /// while the reader scrolls back down.
+    static let nearBottom: CGFloat = 60
+
+    /// The messages in turns: each message sent and the replies after it.
+    static func turns(_ messages: [ChatMessage]) -> [[ChatMessage]] {
+        var turns: [[ChatMessage]] = []
+        for message in messages {
+            if message.role == .assistant, !turns.isEmpty {
+                turns[turns.count - 1].append(message)
+            } else {
+                turns.append([message])
+            }
+        }
+        return turns
+    }
+
+    /// The message to pin: the last one sent, while its reply is coming.
+    static func pinTarget(_ messages: [ChatMessage]) -> UUID? {
+        guard let last = messages.last, last.role == .assistant, last.status == .streaming else { return nil }
+        return messages.last { $0.role != .assistant }?.id
+    }
+
+    /// Room below the pinned turn so it can sit at the top: the viewport it
+    /// doesn't fill yet. None once the reply fills it.
+    static func room(viewport: CGFloat, turn: CGFloat, padding: CGFloat) -> CGFloat {
+        max(0, viewport - turn - padding)
+    }
+
+    /// At the end: the area under the composer doesn't count, text there
+    /// is hidden.
+    static func isAtBottom(visibleMaxY: CGFloat, bottomInset: CGFloat, contentHeight: CGFloat) -> Bool {
+        visibleMaxY - bottomInset >= contentHeight - nearBottom
+    }
+
+    /// Whether a scroll stops following: the reader's, and upward.
+    /// Growth never moves the offset, so it can't.
+    static func stopsFollowing(from old: CGFloat, to new: CGFloat, isReaderScrolling: Bool) -> Bool {
+        isReaderScrolling && new < old - 1
+    }
+}
+
+/// What the pin follows: the chat on screen and the message to pin.
+private struct PinKey: Equatable {
+    let chatID: UUID?
+    let target: UUID?
+}
+
+/// Where the transcript is scrolled, and the height it shows.
+private struct TranscriptScroll: Equatable {
+    let offset: CGFloat
+    let isAtBottom: Bool
+    let viewport: CGFloat
 }
 
 private struct UserBubble: View {
