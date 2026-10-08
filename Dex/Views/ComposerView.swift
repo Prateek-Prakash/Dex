@@ -184,12 +184,9 @@ struct ComposerView: View {
         guard canSend else { return }
         chatVM.send(message, client: serverVM.client, model: modelsVM.pickedModel)
         message = ""
-        let wasFocused = isFocused.wrappedValue
         fieldID = UUID()
-        // Once the new field exists; the old one took focus with it.
-        if wasFocused {
-            DispatchQueue.main.async { isFocused.wrappedValue = true }
-        }
+        // Like Claude: the keyboard closes on send, the reply in full view.
+        isFocused.wrappedValue = false
     }
 }
 
