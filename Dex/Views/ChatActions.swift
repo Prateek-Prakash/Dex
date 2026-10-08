@@ -7,13 +7,16 @@
 
 import SwiftUI
 
-/// Pin or Unpin, Rename and Delete, with their icons and a divider after
-/// each of the first two: a saved chat's long-press and ⋯ menus, and a
-/// folder's. Pin shows the Light pin; Unpin, on a pinned item, the Bold.
+/// Pin or Unpin; Rename and, for a chat, Organize; Delete: with their
+/// icons, a divider between each group. A saved chat's long-press and ⋯
+/// menus, and a folder's. Pin shows the Light pin; Unpin, on a pinned
+/// item, the Bold.
 struct ItemActions: View {
     let isPinned: Bool
     let pin: () -> Void
     let rename: () -> Void
+    /// Moves a chat into or out of a folder; nil for a folder.
+    var organize: (() -> Void)?
     let delete: () -> Void
 
     var body: some View {
@@ -27,6 +30,11 @@ struct ItemActions: View {
         Divider()
         Button(action: rename) {
             Label { Text("Rename") } icon: { Iconly.edit.image(.menu) }
+        }
+        if let organize {
+            Button(action: organize) {
+                Label { Text("Organize") } icon: { Iconly.folder.image(.menu) }
+            }
         }
         Divider()
         Button(role: .destructive, action: delete) {
@@ -167,5 +175,79 @@ private struct FolderActionAlerts: ViewModifier {
 
     private func present(_ folder: Binding<Folder?>) -> Binding<Bool> {
         Binding(get: { folder.wrappedValue != nil }, set: { if !$0 { folder.wrappedValue = nil } })
+    }
+}
+
+extension View {
+    /// The Create Folder dialog, and its refusal of a name another folder
+    /// has, which leads back to it with the typed name kept. `created` gets
+    /// each new folder.
+    func folderCreationAlert(isPresented: Binding<Bool>, created: @escaping (Folder) -> Void = { _ in }) -> some View {
+        modifier(FolderCreationAlert(isPresented: isPresented, created: created))
+    }
+}
+
+private struct FolderCreationAlert: ViewModifier {
+    @Binding var isPresented: Bool
+    let created: (Folder) -> Void
+
+    @Environment(\.modelContext) private var context
+    @State private var name = ""
+    /// The name just refused as taken.
+    @State private var takenName: String?
+    /// Set when Create comes back after a refusal: keeps the typed name.
+    @State private var keepsTypedName = false
+
+    func body(content: Content) -> some View {
+        content
+            .alert("Create Folder", isPresented: $isPresented) {
+                TextField("Name", text: $name)
+                Button("Cancel", role: .cancel) {}
+                Button("Create") { create() }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            // Opens empty, unless coming back from a refusal.
+            .onChange(of: isPresented) {
+                guard isPresented else { return }
+                if keepsTypedName {
+                    keepsTypedName = false
+                } else {
+                    name = ""
+                }
+            }
+            .alert("Folder Already Exists", isPresented: Binding(
+                get: { takenName != nil },
+                set: { if !$0 { takenName = nil } }
+            ), presenting: takenName) { _ in
+                Button("OK") {
+                    keepsTypedName = true
+                    isPresented = true
+                }
+            } message: { taken in
+                Text(taken)
+            }
+    }
+
+    private func create() {
+        switch Folder.create(named: name, in: context) {
+        case .created(let folder):
+            created(folder)
+        case .taken(let taken):
+            takenName = taken
+        case .blank:
+            break
+        }
+    }
+}
+
+extension View {
+    /// The Organize sheet for whichever chat is set in `organizing`; it
+    /// clears it when the sheet closes.
+    func organizeSheet(for organizing: Binding<Chat?>, move: @escaping (Chat, Folder?) -> Void) -> some View {
+        sheet(item: organizing) { chat in
+            // Claude's sheet: the chat screen's background, not a page's.
+            OrganizeView(chat: chat, move: move)
+                .presentationBackground(Color.appBackground)
+        }
     }
 }

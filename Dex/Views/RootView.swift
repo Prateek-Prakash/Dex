@@ -27,10 +27,14 @@ struct RootView: View {
     @StateObject private var chatVM = ChatVM()
     @Environment(\.modelContext) private var modelContext
     @State var page: Page = .chat
-    /// True while a page is pushed onto the screen's own stack (a folder
-    /// opened from Folders): drawer picks open directly, but a pushed page
-    /// has the system back button, and the edge swipe is its Back.
-    @State private var isShowingPushedPage = false
+    /// Pages pushed over `page`, reached from another page rather than the
+    /// drawer: they have the back button, and the edge swipe is Back. A
+    /// drawer pick clears them.
+    @State private var routes: [Route] = []
+    /// The chat on the chat page when pages were pushed over it, put back
+    /// on screen when they're all gone back from (a pushed chat replaced it).
+    @State private var chatUnderRoutes: Chat?
+    @State private var isHoldingChatUnderRoutes = false
     @State var isDrawerOpen: Bool = false
     @State var showSettingsView: Bool = false
     @Environment(\.displayScale) private var displayScale
@@ -81,23 +85,40 @@ struct RootView: View {
                     deleteChat: { chatVM.delete($0) },
                     pinChat: { chatVM.togglePin($0) },
                     pinFolder: { chatVM.togglePin($0) },
+                    moveChat: { chatVM.move($0, to: $1) },
                     deleteFolder: { deleteFolder($0) },
                     reorderPinned: { chatVM.reorderPinned($0) },
                     openSettings: { showSettingsView = true },
                     newSession: { newSession() }
                 )
 
-                Group {
-                    switch page {
-                    case .chat:
-                        ContentView(openDrawer: { setDrawer(open: true) })
-                    case .folders:
-                        FoldersView(openDrawer: { setDrawer(open: true) }, newSession: { newSession() },
-                                    isShowingFolder: { isShowingPushedPage = $0 })
-                    case .folder(let id):
-                        FolderView(id: id, openDrawer: { setDrawer(open: true) }, newSession: { newSession() },
-                                   leave: { show(.folders) })
+                // One stack for every page: drawer picks replace its root,
+                // everything else pushes onto it.
+                NavigationStack(path: $routes) {
+                    Group {
+                        switch page {
+                        case .chat:
+                            ContentView(openDrawer: { setDrawer(open: true) }, push: { push($0) })
+                        case .folders:
+                            FoldersView(openDrawer: { setDrawer(open: true) }, push: { push($0) })
+                        case .folder(let id):
+                            FolderView(id: id, openDrawer: { setDrawer(open: true) }, newSession: { newSession(in: $0) },
+                                       push: { push($0) }, leave: { show(.folders) })
+                        }
                     }
+                    .navigationDestination(for: Route.self) { route in
+                        switch route {
+                        case .folder(let id):
+                            FolderView(id: id, isPushed: true, newSession: { newSession(in: $0) }, push: { push($0) },
+                                       leave: { routes.removeAll { $0 == route } })
+                        case .chat:
+                            PushedChatView(id: route.id, push: { push($0) }, leave: { routes.removeAll { $0 == route } })
+                        }
+                    }
+                }
+                .tint(Color.primary)
+                .onChange(of: routes) { old, new in
+                    holdChatUnderRoutes(old: old, new: new)
                 }
                     .environmentObject(serverVM)
                     .environmentObject(serverVM.models)
@@ -164,7 +185,7 @@ struct RootView: View {
             .onChanged { value in
                 if isDragging == nil {
                     let fromEdge = isHorizontal(value) && value.startLocation.x <= edgeWidth
-                    isBackSwipe = fromEdge && Self.edgeSwipeGoesBack(canGoBack: isShowingPushedPage, isDrawerOpen: isDrawerOpen)
+                    isBackSwipe = fromEdge && Self.edgeSwipeGoesBack(canGoBack: !routes.isEmpty, isDrawerOpen: isDrawerOpen)
                     isDragging = !isBackSwipe && isHorizontal(value) && (isDrawerOpen || fromEdge)
                 }
                 guard isDragging == true else { return }
@@ -206,10 +227,44 @@ struct RootView: View {
 
     /// Switches the main screen to `page` and closes the drawer onto it.
     private func show(_ page: Page) {
-        // A new page starts with nothing pushed.
-        if page != self.page { isShowingPushedPage = false }
+        // A drawer pick starts with nothing pushed, and its chat stays.
+        isHoldingChatUnderRoutes = false
+        chatUnderRoutes = nil
+        routes.removeAll()
         self.page = page
         setDrawer(open: false)
+    }
+
+    /// Pushes `route`, or goes back to it if it's already there.
+    private func push(_ route: Route) {
+        let rootChatID = isHoldingChatUnderRoutes ? chatUnderRoutes?.id : chatVM.chat?.id
+        routes = Route.pushing(route, onto: routes, root: page, rootChatID: rootChatID)
+    }
+
+    /// Remembers the chat page's chat when pages are first pushed over it,
+    /// and puts it back as soon as no pushed chat is left above it: a chat
+    /// pushed meanwhile took its place on screen. Pushed chats only sit on
+    /// folder pages, so it's back before the chat page shows again, back
+    /// animation and edge swipe included.
+    private func holdChatUnderRoutes(old: [Route], new: [Route]) {
+        guard page == .chat else { return }
+        if old.isEmpty, !new.isEmpty {
+            chatUnderRoutes = chatVM.chat
+            isHoldingChatUnderRoutes = true
+        }
+        guard isHoldingChatUnderRoutes else { return }
+        let hasPushedChat = new.contains { if case .chat = $0 { true } else { false } }
+        if !hasPushedChat, chatVM.chat !== chatUnderRoutes {
+            if let chat = chatUnderRoutes, !chat.isDeleted, chat.modelContext != nil {
+                chatVM.open(chat)
+            } else {
+                chatVM.reset()
+            }
+        }
+        if new.isEmpty {
+            isHoldingChatUnderRoutes = false
+            chatUnderRoutes = nil
+        }
     }
     
     /// A saved chat on the main screen.
@@ -225,9 +280,10 @@ struct RootView: View {
         chatVM.delete(folder)
     }
 
-    /// An empty chat on the main screen.
-    private func newSession() {
-        chatVM.reset()
+    /// An empty chat on the main screen; from a folder's page, one that
+    /// joins that folder with its first message.
+    private func newSession(in folder: Folder? = nil) {
+        chatVM.reset(into: folder)
         show(.chat)
     }
 

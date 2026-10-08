@@ -67,6 +67,9 @@ final class ChatVM: ObservableObject {
     private var current: ChatSession?
     /// Chats left mid-reply, until their replies finish.
     private var background: [ChatSession] = []
+    /// The folder a new chat joins with its first message: one started from
+    /// a folder's page.
+    private var newChatFolder: Folder?
     /// Keeps a reply going for a while after the app leaves the screen.
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
@@ -139,10 +142,21 @@ final class ChatVM: ObservableObject {
         current?.streamTask?.cancel()
     }
 
-    /// A new, empty chat.
-    func reset() {
+    /// A new, empty chat; started from a folder's page, it joins `folder`
+    /// with its first message, so an abandoned one never lands there.
+    func reset(into folder: Folder? = nil) {
         leave()
         isIncognito = false
+        newChatFolder = folder
+    }
+
+    /// Moves a saved chat into `folder`, or out of any with nil. Its place
+    /// in Recent stays.
+    func move(_ chat: Chat, to folder: Folder?) {
+        guard chat.folder !== folder else { return }
+        chat.folder = folder
+        chat.updatedAt = .now
+        commit()
     }
 
     /// Puts a saved chat on screen; one still replying picks up live.
@@ -150,6 +164,7 @@ final class ChatVM: ObservableObject {
         guard chat !== self.chat else { return }
         leave()
         isIncognito = false
+        newChatFolder = nil
         if let index = background.firstIndex(where: { $0.chat === chat }) {
             current = background.remove(at: index)
         } else {
@@ -341,6 +356,10 @@ final class ChatVM: ObservableObject {
         let chat = session.chat ?? {
             let chat = Chat(title: ChatTitle.fallback(message.content))
             context.insert(chat)
+            if let folder = newChatFolder, !folder.isDeleted, folder.modelContext != nil {
+                chat.folder = folder
+            }
+            newChatFolder = nil
             session.chat = chat
             return chat
         }()

@@ -8,18 +8,14 @@
 import SwiftUI
 
 /// A page: a centered title, an optional ⋯ menu, and a pill at the bottom
-/// right, over the app background, around the page's content. Opened from
-/// the drawer it has the drawer button and, unless a caller supplies one,
-/// its own navigation stack. Pushed from another page it has neither: it
-/// lives in that page's stack and gets the system back button and swipe,
-/// like Settings' Models.
+/// right, over the app background, around the page's content. It lives in
+/// the main screen's stack: opened from the drawer it has the drawer
+/// button; pushed from another page, the system back button and swipe.
 struct PageScaffold<Content: View, Actions: View>: View {
     let title: String
     let pillTitle: String
     var openDrawer: () -> Void = {}
     var pillAction: () -> Void = {}
-    /// False when the caller wraps the page in its own stack (to push from it).
-    var embedsStack: Bool = true
     /// False on a pushed page: the system back button takes its place.
     var showsDrawerButton: Bool = true
     @ViewBuilder var content: Content
@@ -29,17 +25,6 @@ struct PageScaffold<Content: View, Actions: View>: View {
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
-        if !embedsStack {
-            page
-        } else {
-            NavigationStack {
-                page
-            }
-            .tint(Color.primary)
-        }
-    }
-
-    private var page: some View {
             // The background is the page's base, not a modifier on the
             // content: an empty page (EmptyView) draws nothing, and its
             // background, title and toolbar would vanish with it. Inside the
@@ -88,9 +73,9 @@ struct PageScaffold<Content: View, Actions: View>: View {
 extension PageScaffold where Actions == EmptyView {
     /// A page without a ⋯ menu.
     init(title: String, pillTitle: String, openDrawer: @escaping () -> Void = {}, pillAction: @escaping () -> Void = {},
-         embedsStack: Bool = true, @ViewBuilder content: () -> Content) {
+         showsDrawerButton: Bool = true, @ViewBuilder content: () -> Content) {
         self.init(title: title, pillTitle: pillTitle, openDrawer: openDrawer, pillAction: pillAction,
-                  embedsStack: embedsStack, content: content, actions: { EmptyView() })
+                  showsDrawerButton: showsDrawerButton, content: content, actions: { EmptyView() })
     }
 }
 

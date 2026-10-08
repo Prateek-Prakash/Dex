@@ -33,6 +33,8 @@ struct DrawerView: View {
     var pinChat: (Chat) -> Void = { _ in }
     /// Pins or unpins a folder.
     var pinFolder: (Folder) -> Void = { _ in }
+    /// Moves a chat into a folder, or out with nil.
+    var moveChat: (Chat, Folder?) -> Void = { _, _ in }
     /// Deletes a folder and its chats, once confirmed.
     var deleteFolder: (Folder) -> Void = { _ in }
     /// Saves the pinned rows' new order after a drag, top first.
@@ -54,6 +56,8 @@ struct DrawerView: View {
     /// The chat whose Rename or Delete dialog is up.
     @State private var chatToRename: Chat?
     @State private var chatToDelete: Chat?
+    /// The chat whose Organize sheet is up.
+    @State private var chatToOrganize: Chat?
     /// The folder whose Rename or Delete dialog is up.
     @State private var folderToRename: Folder?
     @State private var folderToDelete: Folder?
@@ -98,6 +102,7 @@ struct DrawerView: View {
             }
             .toolbarTitleDisplayMode(.inline)
             .chatActionAlerts(renaming: $chatToRename, deleting: $chatToDelete, rename: renameChat, delete: deleteChat)
+            .organizeSheet(for: $chatToOrganize, move: moveChat)
             .folderActionAlerts(renaming: $folderToRename, deleting: $folderToDelete, delete: deleteFolder)
             .safeAreaInset(edge: .bottom) {
                 HStack {
@@ -174,7 +179,8 @@ struct DrawerView: View {
                 }
                 .contextMenu {
                     ItemActions(isPinned: chat.pinnedAt != nil, pin: { pinChat(chat) },
-                                rename: { chatToRename = chat }, delete: { chatToDelete = chat })
+                                rename: { chatToRename = chat }, organize: { chatToOrganize = chat },
+                                delete: { chatToDelete = chat })
                 }
             }
         }

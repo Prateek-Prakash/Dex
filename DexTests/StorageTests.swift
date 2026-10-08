@@ -619,3 +619,78 @@ struct PinTests {
         #expect(DrawerItem.recent([first, pinned, last]).map(\.title) == ["First", "Last"])
     }
 }
+
+/// Organize: moving chats into and out of folders, and a folder's New Session.
+@MainActor
+struct OrganizeTests {
+    private static func vm() -> (ChatVM, ModelContext) {
+        let context = ModelContext(Storage.inMemory())
+        let vm = ChatVM()
+        vm.context = context
+        return (vm, context)
+    }
+
+    @Test func moveIntoAcrossAndOutKeepsRecentOrder() throws {
+        let (vm, context) = Self.vm()
+        let lab = Folder(name: "Lab")
+        let recipes = Folder(name: "Recipes")
+        let chat = Chat(title: "Notes")
+        [lab, recipes].forEach(context.insert)
+        context.insert(chat)
+        let lastMessageAt = chat.lastMessageAt
+
+        vm.move(chat, to: lab)
+        #expect(chat.folder === lab)
+        #expect(DrawerItem(chat).kind == .folderChat)
+        vm.move(chat, to: recipes)
+        #expect(chat.folder === recipes)
+        #expect(lab.chats?.isEmpty == true)
+        vm.move(chat, to: nil)
+        #expect(chat.folder == nil)
+        #expect(DrawerItem(chat).kind == .chat)
+        #expect(chat.lastMessageAt == lastMessageAt)
+        #expect(!context.hasChanges)
+    }
+
+    @Test func folderNewSessionJoinsTheFolderWithItsFirstMessage() throws {
+        let (vm, context) = Self.vm()
+        let lab = Folder(name: "Lab")
+        context.insert(lab)
+
+        // Abandoned before a message: nothing lands in the folder.
+        vm.reset(into: lab)
+        vm.reset()
+        vm.send("Loose", client: nil, model: nil)
+        #expect(vm.chat?.folder == nil)
+
+        vm.reset(into: lab)
+        vm.send("Inside", client: nil, model: nil)
+        #expect(vm.chat?.folder === lab)
+        // Only the first chat after it: the next new one is on its own.
+        vm.reset()
+        vm.send("After", client: nil, model: nil)
+        #expect(vm.chat?.folder == nil)
+
+        // Opening a saved chat drops a pending folder.
+        let saved = Chat(title: "Saved")
+        context.insert(saved)
+        vm.reset(into: lab)
+        vm.open(saved)
+        vm.reset()
+        vm.send("Fresh", client: nil, model: nil)
+        #expect(vm.chat?.folder == nil)
+        #expect(try context.fetch(FetchDescriptor<Chat>(predicate: Chat.inFolder(lab.id))).map(\.title) == ["Inside"])
+    }
+
+    @Test func folderDeletedBeforeTheFirstMessageIsLeftOut() throws {
+        let (vm, context) = Self.vm()
+        let lab = Folder(name: "Lab")
+        context.insert(lab)
+        try context.save()
+        vm.reset(into: lab)
+        context.delete(lab)
+        try context.save()
+        vm.send("Hi", client: nil, model: nil)
+        #expect(vm.chat?.folder == nil)
+    }
+}

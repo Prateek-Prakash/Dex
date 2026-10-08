@@ -8,6 +8,9 @@
 import SwiftData
 import SwiftUI
 
+/// The chat screen. As the drawer's chat page it shows whatever chat is on
+/// screen and has the drawer button; pushed (from a folder's page) it opens
+/// its own chat and has the back button.
 struct ContentView: View {
     @EnvironmentObject var serverVM: ServerVM
     @EnvironmentObject var chatVM: ChatVM
@@ -16,32 +19,38 @@ struct ContentView: View {
     
     /// Opens the drawer behind this screen.
     var openDrawer: () -> Void = {}
+    /// Pushes a page over this one: the chat's folder, from its chip.
+    var push: (Route) -> Void = { _ in }
+    /// The chat this screen was pushed for; nil on the drawer's chat page.
+    var pushedChat: Chat?
     
     @FocusState private var isComposerFocused: Bool
     /// The chat whose Rename or Delete dialog is up.
     @State private var chatToRename: Chat?
     @State private var chatToDelete: Chat?
+    @State private var chatToOrganize: Chat?
     
     var body: some View {
-        NavigationStack {
-            Group {
-                if chatVM.messages.isEmpty {
-                    emptyChat
-                } else {
-                    ChatTranscriptView()
-                }
+        Group {
+            if chatVM.messages.isEmpty {
+                emptyChat
+            } else {
+                ChatTranscriptView()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background {
-                if let id = chatVM.chat?.id {
-                    ChatSync(chatID: id)
-                        .id(id)
-                }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            if let id = chatVM.chat?.id {
+                ChatSync(chatID: id)
+                    .id(id)
             }
-            // Inside the stack: the stack paints its own system background
-            // over anything set behind it.
-            .background(Color.appBackground.ignoresSafeArea())
-            .toolbar {
+        }
+        // Inside the stack: the stack paints its own system background
+        // over anything set behind it.
+        .background(Color.appBackground.ignoresSafeArea())
+        .toolbar {
+            // Pushed, the system back button takes its place.
+            if pushedChat == nil {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         openDrawer()
@@ -49,62 +58,90 @@ struct ContentView: View {
                         IconlyIcon(.menu, .action)
                     }
                 }
-                // Once a chat starts, the context ring shows top right, beside
-                // the close button in an incognito chat.
-                if !chatVM.messages.isEmpty {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        // Empty until the first reply reports its size.
-                        ContextMeter(used: chatVM.contextUsed ?? 0, total: OllamaChatRequest.contextLength)
-                    }
-                    if #available(iOS 26.0, *) {
-                        ToolbarSpacer(.fixed, placement: .topBarTrailing)
-                    }
+            }
+            // Like Claude: the chat's folder, in its own glass beside the
+            // drawer or back button; tapping it opens the folder's page,
+            // going back to it if that's where the chat came from.
+            if let folder = chatVM.chat?.folder {
+                if #available(iOS 26.0, *) {
+                    ToolbarSpacer(.fixed, placement: .topBarLeading)
                 }
-                // Like Claude: a chat turns incognito before it starts, not
-                // after. A started incognito chat gets a close button instead,
-                // back to a new, ordinary chat; a started saved chat gets the
-                // ⋯ menu, the drawer's long-press actions.
-                if chatVM.messages.isEmpty {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        incognitoButton
-                    }
-                } else if chatVM.isIncognito {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                chatVM.reset()
-                            }
-                        } label: {
-                            IconlyIcon(.close, .action)
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        push(.folder(folder.id))
+                    } label: {
+                        HStack(spacing: 6.0) {
+                            IconlyIcon(.folder, .chip)
+                            Text(folder.name)
+                                .lineLimit(1)
+                                .fontDesign(.rounded)
                         }
-                        .accessibilityLabel("Close Incognito Chat")
+                        .padding(.horizontal, 4.0)
                     }
-                } else if let chat = chatVM.chat {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Menu {
-                            ItemActions(isPinned: chat.pinnedAt != nil, pin: { chatVM.togglePin(chat) },
-                                        rename: { chatToRename = chat }, delete: { chatToDelete = chat })
-                        } label: {
-                            MoreMenuLabel(colorScheme: colorScheme)
-                        }
-                        .tint(Color.primary)
-                        .accessibilityLabel("Chat Options")
-                    }
+                    .accessibilityLabel("Folder \(folder.name)")
                 }
             }
-            .chatActionAlerts(
-                renaming: $chatToRename,
-                deleting: $chatToDelete,
-                rename: { chatVM.rename($0, to: $1) },
-                delete: { chatVM.delete($0) }
-            )
-            .navigationTitle(chatVM.isIncognito ? "Incognito" : "")
-            .toolbarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .bottom) {
-                ComposerView(isFocused: $isComposerFocused)
+            // Once a chat starts, the context ring shows top right, beside
+            // the close button in an incognito chat.
+            if !chatVM.messages.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    // Empty until the first reply reports its size.
+                    ContextMeter(used: chatVM.contextUsed ?? 0, total: OllamaChatRequest.contextLength)
+                }
+                if #available(iOS 26.0, *) {
+                    ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                }
+            }
+            // Like Claude: a chat turns incognito before it starts, not
+            // after. A started incognito chat gets a close button instead,
+            // back to a new, ordinary chat; a started saved chat gets the
+            // ⋯ menu, the drawer's long-press actions.
+            if chatVM.messages.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    incognitoButton
+                }
+            } else if chatVM.isIncognito {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            chatVM.reset()
+                        }
+                    } label: {
+                        IconlyIcon(.close, .action)
+                    }
+                    .accessibilityLabel("Close Incognito Chat")
+                }
+            } else if let chat = chatVM.chat {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        ItemActions(isPinned: chat.pinnedAt != nil, pin: { chatVM.togglePin(chat) },
+                                    rename: { chatToRename = chat }, organize: { chatToOrganize = chat },
+                                    delete: { chatToDelete = chat })
+                    } label: {
+                        MoreMenuLabel(colorScheme: colorScheme)
+                    }
+                    .tint(Color.primary)
+                    .accessibilityLabel("Chat Options")
+                }
             }
         }
-        .tint(Color.primary)
+        .chatActionAlerts(
+            renaming: $chatToRename,
+            deleting: $chatToDelete,
+            rename: { chatVM.rename($0, to: $1) },
+            delete: { chatVM.delete($0) }
+        )
+        .organizeSheet(for: $chatToOrganize) { chatVM.move($0, to: $1) }
+        .navigationTitle(chatVM.isIncognito ? "Incognito" : "")
+        .toolbarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) {
+            ComposerView(isFocused: $isComposerFocused)
+        }
+        // Pushed: its own chat on screen each time it shows, coming back
+        // from a page pushed over it included.
+        .onAppear {
+            if let pushedChat, !pushedChat.isDeleted { chatVM.open(pushedChat) }
+        }
     }
     
     /// Turns a new chat incognito, or back.
@@ -150,6 +187,32 @@ struct ContentView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             isComposerFocused = false
+        }
+    }
+}
+
+/// A chat pushed by id, found in the store. Deleted, here or on another
+/// device, its place in the stack is taken out (`leave`).
+struct PushedChatView: View {
+    var push: (Route) -> Void = { _ in }
+    var leave: () -> Void = {}
+    @Query private var chats: [Chat]
+
+    init(id: UUID, push: @escaping (Route) -> Void, leave: @escaping () -> Void) {
+        self.push = push
+        self.leave = leave
+        _chats = Query(filter: #Predicate<Chat> { $0.id == id })
+    }
+
+    var body: some View {
+        ZStack {
+            Color.appBackground.ignoresSafeArea()
+            if let chat = chats.first {
+                ContentView(push: push, pushedChat: chat)
+            }
+        }
+        .onChange(of: chats.isEmpty) {
+            if chats.isEmpty { leave() }
         }
     }
 }

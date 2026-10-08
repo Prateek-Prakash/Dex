@@ -51,7 +51,7 @@ ORDER = [
     'menu', 'incognito', 'chevronDown', 'microphone', 'send', 'download',
     'refresh',
     'close', 'info', 'settings', 'add', 'folder', 'chat',
-    'edit', 'delete', 'more', 'pin', 'pinBold',
+    'edit', 'delete', 'more', 'pin', 'pinBold', 'check',
 ]
 
 

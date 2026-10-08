@@ -126,6 +126,11 @@ final class Chat {
         self.title = title
     }
 
+    /// The chats in the folder with id `folderID`.
+    static func inFolder(_ folderID: UUID) -> Predicate<Chat> {
+        #Predicate<Chat> { $0.folder?.id == folderID }
+    }
+
     /// The stored messages in order.
     var sortedMessages: [Message] {
         (messages ?? []).sorted { $0.sequence < $1.sequence }
