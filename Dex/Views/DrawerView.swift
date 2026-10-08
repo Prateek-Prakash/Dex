@@ -18,7 +18,8 @@ struct DrawerView: View {
     var page: RootView.Page = .chat
     /// The saved chat on the main screen; its row is highlighted.
     var currentChatID: UUID?
-    /// Chats with a reply running; their rows show a spinner.
+    /// Chats with a reply streaming here; their rows show a spinner, as do
+    /// chats replying on another device (`replyingChatIDs`).
     var streamingChatIDs: Set<UUID> = []
     /// Shows a page on the main screen.
     var select: (RootView.Page) -> Void = { _ in }
@@ -45,6 +46,11 @@ struct DrawerView: View {
     @Query(sort: \Chat.lastMessageAt, order: .reverse) private var chats: [Chat]
     /// Every folder; the pinned ones show.
     @Query private var folders: [Folder]
+    /// Replies stored streaming: here, on another device, or cut off.
+    @Query(filter: Message.streaming) private var streamingMessages: [Message]
+    /// Ticks every few seconds, so a reply whose device went quiet loses
+    /// its spinner once it stops counting as live.
+    @State private var now = Date()
     /// The chat whose Rename or Delete dialog is up.
     @State private var chatToRename: Chat?
     @State private var chatToDelete: Chat?
@@ -112,6 +118,20 @@ struct DrawerView: View {
             }
         }
         .tint(Color.primary)
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                now = .now
+            }
+        }
+    }
+
+    /// Chats with a reply coming, here or on another device.
+    private var replyingChatIDs: Set<UUID> {
+        let elsewhere = streamingMessages
+            .filter { $0.isLiveElsewhere(now: now) }
+            .compactMap { $0.chat?.id }
+        return streamingChatIDs.union(elsewhere)
     }
 
     /// The highlight's edges line up with the title and it is 48pt tall; a
@@ -149,7 +169,7 @@ struct DrawerView: View {
                 }
             } else if let chat = chats.first(where: { $0.id.uuidString == item.id }) {
                 row(item.icon, item.title, isSelected: page == .chat && chat.id == currentChatID,
-                    isReplying: streamingChatIDs.contains(chat.id)) {
+                    isReplying: replyingChatIDs.contains(chat.id)) {
                     openChat(chat)
                 }
                 .contextMenu {

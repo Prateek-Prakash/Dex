@@ -156,8 +156,9 @@ struct ContentView: View {
 
 /// Keeps the open chat in step with the store. Its queries refire once
 /// a sync from another device is merged in (and after this device's own
-/// saves, which change nothing): new messages then show, and a chat
-/// deleted elsewhere leaves the screen.
+/// saves, which change nothing): new messages and a reply's checkpoints
+/// then show, and a chat deleted elsewhere leaves the screen. A recheck
+/// every few seconds lets a reply whose device went quiet turn stopped.
 private struct ChatSync: View {
     let chatID: UUID
     @EnvironmentObject private var chatVM: ChatVM
@@ -172,8 +173,14 @@ private struct ChatSync: View {
 
     var body: some View {
         Color.clear
-            .onChange(of: messages.map(ChatMessage.init)) {
+            .onChange(of: messages.map { ChatMessage($0) }) {
                 chatVM.refresh()
+            }
+            .task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(15))
+                    if chatVM.isStreaming, !chatVM.isReplyingHere { chatVM.refresh() }
+                }
             }
             .onChange(of: chats.isEmpty) {
                 if chats.isEmpty, chatVM.chat?.id == chatID { chatVM.reset() }

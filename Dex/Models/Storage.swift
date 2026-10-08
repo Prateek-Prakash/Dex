@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftData
+import UIKit
 
 // Stored in SwiftData and synced through the iCloud private database.
 // CloudKit's rules shape every model here: no unique attributes, every
@@ -148,10 +149,35 @@ final class Message {
     var error: String?
     var promptTokens: Int?
     var outputTokens: Int?
+    /// While a reply streams: when it last got a checkpoint, and the device
+    /// streaming it (`thisDevice`). Nil for anything else.
+    var checkpointAt: Date?
+    var replyDevice: String?
 
     init(id: UUID) {
         self.id = id
     }
+
+    /// How often a reply streaming here is saved, tokens or not, so other
+    /// devices see it come in and know it's alive.
+    static let checkpointInterval: TimeInterval = 5
+    /// How long a reply stored streaming counts as still coming without a
+    /// new checkpoint: well past the interval, since sync can lag.
+    static let liveWindow: TimeInterval = 90
+    /// This device, as `replyDevice` names it.
+    static let thisDevice = UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
+
+    /// Whether a reply stored streaming is still coming on another device:
+    /// checkpointed lately, and not by this one (a reply streaming here is
+    /// shown from memory; one stored from here but not running was cut off).
+    func isLiveElsewhere(now: Date = .now) -> Bool {
+        guard status == ChatMessage.Status.streaming.rawValue, let checkpointAt,
+              replyDevice != Self.thisDevice else { return false }
+        return now.timeIntervalSince(checkpointAt) < Self.liveWindow
+    }
+
+    /// Replies stored streaming, live or cut off.
+    static let streaming = #Predicate<Message> { $0.status == "streaming" }
 
     /// The messages of the chat with id `chatID`.
     static func inChat(_ chatID: UUID) -> Predicate<Message> {
@@ -174,7 +200,10 @@ final class Message {
 }
 
 extension ChatMessage {
-    init(_ stored: Message) {
+    /// A stored message. A reply stored streaming is still coming only while
+    /// another device keeps checkpointing it; otherwise it was cut off by a
+    /// quit and can't pick up again.
+    init(_ stored: Message, now: Date = .now) {
         self.init(
             id: stored.id,
             role: Role(rawValue: stored.role) ?? .user,
@@ -188,8 +217,9 @@ extension ChatMessage {
             promptTokens: stored.promptTokens,
             outputTokens: stored.outputTokens
         )
-        // A reply cut off by a quit can't pick up where it left off.
-        if status == .streaming { status = .stopped }
+        if status == .streaming, !stored.isLiveElsewhere(now: now) {
+            status = .stopped
+        }
     }
 }
 

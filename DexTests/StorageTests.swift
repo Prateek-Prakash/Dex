@@ -324,12 +324,78 @@ extension StubbedNetworkTests {
             storedReply.status = .stopped
             let synced = ChatMessage(role: .user, content: "From the iPad", sequence: 2)
 
-            let merged = ChatVM.merge(local: [user, local], stored: [user, storedReply, synced])
+            let merged = ChatVM.merge(local: [user, local], stored: [user, storedReply, synced], replyID: local.id)
             #expect(merged == [user, local, synced])
             // Retried away on another device: kept, saved again when it ends.
-            #expect(ChatVM.merge(local: [user, local], stored: [user]) == [user, local])
-            // Nothing streaming: the store wins, messages gone there go here.
-            #expect(ChatVM.merge(local: [user, storedReply], stored: [user]) == [user])
+            #expect(ChatVM.merge(local: [user, local], stored: [user], replyID: local.id) == [user, local])
+            // Nothing streaming here: the store wins, messages gone there go here.
+            #expect(ChatVM.merge(local: [user, storedReply], stored: [user], replyID: nil) == [user])
+            // Streaming on another device: each checkpoint comes from the store.
+            var checkpoint = local
+            checkpoint.content = "Half an answer"
+            #expect(ChatVM.merge(local: [user, local], stored: [user, checkpoint], replyID: nil) == [user, checkpoint])
+        }
+
+        @Test func replyStreamingElsewhereShowsLiveUntilItGoesQuiet() async throws {
+            let (vm, context) = Self.vm()
+            vm.send("Hi", client: Self.client(), model: Self.model)
+            await vm.waitForReply()
+            let chat = try #require(vm.chat)
+            // Another device starts a reply and checkpoints it.
+            let reply = Message(id: UUID())
+            context.insert(reply)
+            reply.chat = chat
+            reply.role = "assistant"
+            reply.sequence = 2
+            reply.status = "streaming"
+            reply.thinking = "Hmm, let me see"
+            reply.checkpointAt = .now
+            reply.replyDevice = "another-device"
+            try context.save()
+
+            vm.refresh()
+            #expect(vm.messages.last?.status == .streaming)
+            #expect(vm.messages.last?.thinking == "Hmm, let me see")
+            #expect(vm.isStreaming)
+            #expect(!vm.isReplyingHere)
+            #expect(vm.streamingChatIDs.isEmpty)
+            // Nothing can be sent until it finishes.
+            vm.send("More", client: Self.client(), model: Self.model)
+            #expect(vm.messages.count == 3)
+
+            // Live while checkpoints keep coming; stopped once they don't.
+            let checkpoint = try #require(reply.checkpointAt)
+            #expect(ChatMessage(reply, now: checkpoint.addingTimeInterval(30)).status == .streaming)
+            #expect(ChatMessage(reply, now: checkpoint.addingTimeInterval(Message.liveWindow)).status == .stopped)
+        }
+
+        @Test func cutOffReplyIsSavedStoppedAndStaysThat() async throws {
+            let (vm, context) = Self.vm()
+            vm.send("Hi", client: Self.client(), model: Self.model)
+            await vm.waitForReply()
+            await vm.waitForTitle()
+            let chat = try #require(vm.chat)
+            // This device's own reply, cut off by a quit a moment ago.
+            let reply = Message(id: UUID())
+            context.insert(reply)
+            reply.chat = chat
+            reply.role = "assistant"
+            reply.sequence = 2
+            reply.status = "streaming"
+            reply.checkpointAt = .now
+            reply.replyDevice = Message.thisDevice
+            try context.save()
+
+            vm.reset()
+            vm.open(chat)
+            #expect(vm.messages.last?.status == .stopped)
+            #expect(vm.canRetry)
+            #expect(reply.status == "stopped")
+            #expect(reply.checkpointAt == nil)
+            // A rename, or any later save, leaves it stopped.
+            vm.rename(chat, to: "Renamed")
+            vm.refresh()
+            #expect(vm.messages.last?.status == .stopped)
         }
 
         @Test func inChatFindsOnlyThatChatsMessages() throws {
