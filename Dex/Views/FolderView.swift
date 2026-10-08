@@ -13,14 +13,12 @@ import SwiftUI
 /// be confused. Opened from the drawer it has the drawer button; pushed
 /// (from Folders, or a chat's folder chip), the back button. ⋯ pins,
 /// renames or deletes it; deleted anywhere, it leaves. A chat opens pushed
-/// over it; New Session starts a chat in it; a long press on a chat pins,
+/// over it; New Session pushes a new chat in it; a long press on a chat pins,
 /// renames, organizes or deletes it.
 struct FolderView: View {
     /// Opens the drawer behind this screen.
     var openDrawer: () -> Void = {}
-    /// A new chat in this folder.
-    var newSession: (Folder) -> Void = { _ in }
-    /// Pushes a page over this one: one of its chats.
+    /// Pushes a page over this one: one of its chats, or a new chat in it.
     var push: (Route) -> Void = { _ in }
     /// Pushed from Folders, not opened from the drawer.
     var isPushed = false
@@ -41,11 +39,10 @@ struct FolderView: View {
     @State private var chatToOrganize: Chat?
 
     init(id: UUID, isPushed: Bool = false, openDrawer: @escaping () -> Void = {},
-         newSession: @escaping (Folder) -> Void = { _ in }, push: @escaping (Route) -> Void = { _ in },
+         push: @escaping (Route) -> Void = { _ in },
          leave: @escaping () -> Void = {}) {
         self.isPushed = isPushed
         self.openDrawer = openDrawer
-        self.newSession = newSession
         self.push = push
         self.leave = leave
         _folders = Query(filter: #Predicate<Folder> { $0.id == id })
@@ -56,7 +53,7 @@ struct FolderView: View {
 
     var body: some View {
         PageScaffold(title: folder?.name ?? "", pillTitle: "New Session", openDrawer: openDrawer,
-                     pillAction: { if let folder { newSession(folder) } },
+                     pillAction: { if let folder { push(.newChat(folder.id)) } },
                      showsDrawerButton: !isPushed) {
             List(chats) { chat in
                 Button {

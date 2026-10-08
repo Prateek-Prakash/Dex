@@ -68,8 +68,8 @@ final class ChatVM: ObservableObject {
     /// Chats left mid-reply, until their replies finish.
     private var background: [ChatSession] = []
     /// The folder a new chat joins with its first message: one started from
-    /// a folder's page.
-    private var newChatFolder: Folder?
+    /// a folder's page. Shown in its chip before then.
+    @Published private(set) var newChatFolder: Folder?
     /// Keeps a reply going for a while after the app leaves the screen.
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 

@@ -23,6 +23,13 @@ struct ContentView: View {
     var push: (Route) -> Void = { _ in }
     /// The chat this screen was pushed for; nil on the drawer's chat page.
     var pushedChat: Chat?
+    /// Pushed for a new chat in this folder (a folder's New Session).
+    var newChatFolder: Folder?
+    /// That new chat, once its first message saves it.
+    @State private var startedChat: Chat?
+    @State private var hasAppeared = false
+
+    private var isPushed: Bool { pushedChat != nil || newChatFolder != nil }
     
     @FocusState private var isComposerFocused: Bool
     /// The chat whose Rename or Delete dialog is up.
@@ -50,7 +57,7 @@ struct ContentView: View {
         .background(Color.surfaceBase.ignoresSafeArea())
         .toolbar {
             // Pushed, the system back button takes its place.
-            if pushedChat == nil {
+            if !isPushed {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         openDrawer()
@@ -62,7 +69,9 @@ struct ContentView: View {
             // Like Claude: the chat's folder, in its own glass beside the
             // drawer or back button; tapping it opens the folder's page,
             // going back to it if that's where the chat came from.
-            if let folder = chatVM.chat?.folder {
+            // A new chat started in a folder shows it before its first
+            // message; an incognito one never joins it.
+            if let folder = chatVM.chat?.folder ?? (chatVM.isIncognito ? nil : chatVM.newChatFolder) {
                 if #available(iOS 26.0, *) {
                     ToolbarSpacer(.fixed, placement: .topBarLeading)
                 }
@@ -104,7 +113,8 @@ struct ContentView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            chatVM.reset()
+                            // On a folder's New Session, still in the folder.
+                            chatVM.reset(into: newChatFolder)
                         }
                     } label: {
                         IconlyIcon(.close, .action)
@@ -141,9 +151,36 @@ struct ContentView: View {
         // from a page pushed over it included.
         .onAppear {
             if let pushedChat, !pushedChat.isDeleted { chatVM.open(pushedChat) }
+            if let newChatFolder { showNewChat(in: newChatFolder) }
+        }
+        // A pushed new chat's first message saves it: that chat is now this
+        // screen's.
+        .onChange(of: chatVM.chat) {
+            guard let newChatFolder else { return }
+            if startedChat == nil, let chat = chatVM.chat, chat.folder === newChatFolder {
+                startedChat = chat
+            } else if let startedChat, startedChat.isDeleted || startedChat.modelContext == nil {
+                // Deleted, here or elsewhere: a fresh new chat in the folder.
+                self.startedChat = nil
+                if chatVM.chat == nil { chatVM.reset(into: newChatFolder) }
+            }
         }
     }
     
+    /// A pushed new chat on screen: started fresh the first time, then, on
+    /// coming back from a page pushed over it, the chat it became, or a
+    /// fresh one again if it never got a message.
+    private func showNewChat(in folder: Folder) {
+        if !hasAppeared {
+            hasAppeared = true
+            chatVM.reset(into: folder)
+        } else if let startedChat, !startedChat.isDeleted {
+            chatVM.open(startedChat)
+        } else if chatVM.chat != nil || chatVM.newChatFolder !== folder {
+            chatVM.reset(into: folder)
+        }
+    }
+
     /// Turns a new chat incognito, or back.
     private var incognitoButton: some View {
         Button {
@@ -213,6 +250,32 @@ struct PushedChatView: View {
         }
         .onChange(of: chats.isEmpty) {
             if chats.isEmpty { leave() }
+        }
+    }
+}
+
+/// A folder's New Session, pushed: a new chat in the folder found by id.
+/// The folder deleted, its place in the stack is taken out (`leave`).
+struct PushedNewChatView: View {
+    var push: (Route) -> Void = { _ in }
+    var leave: () -> Void = {}
+    @Query private var folders: [Folder]
+
+    init(folderID: UUID, push: @escaping (Route) -> Void, leave: @escaping () -> Void) {
+        self.push = push
+        self.leave = leave
+        _folders = Query(filter: #Predicate<Folder> { $0.id == folderID })
+    }
+
+    var body: some View {
+        ZStack {
+            Color.surfaceBase.ignoresSafeArea()
+            if let folder = folders.first {
+                ContentView(push: push, newChatFolder: folder)
+            }
+        }
+        .onChange(of: folders.isEmpty) {
+            if folders.isEmpty { leave() }
         }
     }
 }

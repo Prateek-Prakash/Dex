@@ -102,17 +102,20 @@ struct RootView: View {
                         case .folders:
                             FoldersView(openDrawer: { setDrawer(open: true) }, push: { push($0) })
                         case .folder(let id):
-                            FolderView(id: id, openDrawer: { setDrawer(open: true) }, newSession: { newSession(in: $0) },
+                            FolderView(id: id, openDrawer: { setDrawer(open: true) },
                                        push: { push($0) }, leave: { show(.folders) })
                         }
                     }
                     .navigationDestination(for: Route.self) { route in
                         switch route {
                         case .folder(let id):
-                            FolderView(id: id, isPushed: true, newSession: { newSession(in: $0) }, push: { push($0) },
+                            FolderView(id: id, isPushed: true, push: { push($0) },
                                        leave: { routes.removeAll { $0 == route } })
                         case .chat:
                             PushedChatView(id: route.id, push: { push($0) }, leave: { routes.removeAll { $0 == route } })
+                        case .newChat(let folderID):
+                            PushedNewChatView(folderID: folderID, push: { push($0) },
+                                              leave: { routes.removeAll { $0 == route } })
                         }
                     }
                 }
@@ -253,7 +256,7 @@ struct RootView: View {
             isHoldingChatUnderRoutes = true
         }
         guard isHoldingChatUnderRoutes else { return }
-        let hasPushedChat = new.contains { if case .chat = $0 { true } else { false } }
+        let hasPushedChat = new.contains(where: \.isChat)
         if !hasPushedChat, chatVM.chat !== chatUnderRoutes {
             if let chat = chatUnderRoutes, !chat.isDeleted, chat.modelContext != nil {
                 chatVM.open(chat)
@@ -280,10 +283,10 @@ struct RootView: View {
         chatVM.delete(folder)
     }
 
-    /// An empty chat on the main screen; from a folder's page, one that
-    /// joins that folder with its first message.
-    private func newSession(in folder: Folder? = nil) {
-        chatVM.reset(into: folder)
+    /// An empty chat on the main screen, from the drawer. A folder page's
+    /// New Session pushes one instead (`Route.newChat`).
+    private func newSession() {
+        chatVM.reset()
         show(.chat)
     }
 

@@ -51,6 +51,17 @@ struct RouteTests {
         #expect(Route.pushing(.chat(trip), onto: [.folder(lab)], root: .chat, rootChatID: trip) == [])
     }
 
+    @Test func folderNewSessionPushesAndItsChipGoesBack() {
+        // Lab from the drawer → New Session → the chip asks for Lab.
+        let pushed = Route.pushing(.newChat(lab), onto: [], root: .folder(lab), rootChatID: nil)
+        #expect(pushed == [.newChat(lab)])
+        #expect(Route.pushing(.folder(lab), onto: pushed, root: .folder(lab), rootChatID: nil) == [])
+        // Folders → Lab → New Session → chip: back to Lab.
+        #expect(Route.pushing(.folder(lab), onto: [.folder(lab), .newChat(lab)], root: .folders, rootChatID: nil)
+                == [.folder(lab)])
+        #expect(Route.newChat(lab).isChat && Route.chat(notes).isChat && !Route.folder(lab).isChat)
+    }
+
     @Test func anotherFolderStillPushes() {
         #expect(Route.pushing(.folder(recipes), onto: [.folder(lab), .chat(notes)], root: .folders, rootChatID: nil)
                 == [.folder(lab), .chat(notes), .folder(recipes)])

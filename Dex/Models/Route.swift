@@ -12,11 +12,21 @@ import Foundation
 enum Route: Hashable {
     case folder(UUID)
     case chat(UUID)
+    /// A new chat in the folder with this id: a folder page's New Session.
+    case newChat(UUID)
 
     /// The folder's or chat's id.
     var id: UUID {
         switch self {
-        case .folder(let id), .chat(let id): id
+        case .folder(let id), .chat(let id), .newChat(let id): id
+        }
+    }
+
+    /// A chat page, saved or new: it puts its own chat on screen.
+    var isChat: Bool {
+        switch self {
+        case .folder: false
+        case .chat, .newChat: true
         }
     }
 
