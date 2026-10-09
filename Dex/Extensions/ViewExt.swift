@@ -8,6 +8,18 @@
 import SwiftUI
 
 extension View {
+    /// The toolbar's glass, with its hairline, where content scrolls under
+    /// it, like the drawer's; asked for outright, as the chat list stopped
+    /// getting it by default.
+    @ViewBuilder
+    func toolbarGlassEdge() -> some View {
+        if #available(iOS 26.0, *) {
+            scrollEdgeEffectStyle(.hard, for: .top)
+        } else {
+            self
+        }
+    }
+
     /// A round Liquid Glass button surface, or a material one before iOS 26.
     @ViewBuilder
     func glassCircle() -> some View {

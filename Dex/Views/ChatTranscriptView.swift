@@ -32,12 +32,30 @@ struct ChatTranscriptView: View {
     @State private var isNearBottom = true
     /// The message pinned to the top: the last one sent here.
     @State private var pinnedID: UUID?
+    /// Each turn's measured height, by its first message: the pinned one's
+    /// is known the moment it's pinned. Reset to 0 at the pin, the room came
+    /// out too big, then shrank once the turn re-measured, and the shorter
+    /// list dropped the message halfway down.
+    @State private var turnHeights: [UUID: CGFloat] = [:]
+    /// Each turn's top in the list's content, by its first message: the pin
+    /// scrolls to it. Scrolling to the turn by id aimed short.
+    @State private var turnTops: [UUID: CGFloat] = [:]
+    /// The list's height, and the height between the toolbar and the
+    /// composer: where the reply ends, and how much of it shows.
+    @State private var contentHeight: CGFloat = 0
+    @State private var visibleHeight: CGFloat = 0
+
+    /// Where the reply ends: the list's height without the empty room.
+    private var replyEnd: CGFloat { contentHeight - room }
     /// The pinned message and its replies' height, and the height between
     /// the toolbar and the composer: what's left is room for the reply.
-    @State private var pinnedTurnHeight: CGFloat = 0
-    /// The tallest viewport seen: the keyboard shrinks it while a message
-    /// is sent, and room sized for that left the message short of the top.
-    /// Too much room is harmless; it shrinks as the reply grows.
+    private var pinnedTurnHeight: CGFloat {
+        pinnedID.flatMap { turnHeights[$0] } ?? 0
+    }
+    /// The scroll view's full height, the tallest seen (the keyboard shrinks
+    /// it). The scroll range runs to it, under the toolbar and the composer
+    /// too, so the room is sized from it: sized from just the gap between
+    /// them, the room fell 277pt short and the message stopped mid-screen.
     @State private var viewportHeight: CGFloat = 0
     /// Keeps the pinned message at the top while the screen settles: the
     /// keyboard going away after a send grows the viewport, and the room
@@ -46,7 +64,10 @@ struct ChatTranscriptView: View {
 
     private var room: CGFloat {
         guard pinnedID != nil else { return 0 }
-        return TranscriptLayout.room(viewport: viewportHeight, turn: pinnedTurnHeight, padding: Space.xl)
+        // Around the measured turn: its own top padding and the gap before
+        // the room (measured on device: 613 - 99 - 24 left it exact).
+        return TranscriptLayout.room(viewport: viewportHeight, turn: pinnedTurnHeight,
+                                     padding: Space.xl + Space.m)
     }
 
     var body: some View {
@@ -69,7 +90,10 @@ struct ChatTranscriptView: View {
                     .padding(.top, Space.xl)
                     .id(turn[0].id)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                        if turn[0].id == pinnedID { pinnedTurnHeight = height }
+                        turnHeights[turn[0].id] = height
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.content)).minY } action: { y in
+                        turnTops[turn[0].id] = y
                     }
                 }
                 // Room for the pinned message's reply to grow into.
@@ -79,10 +103,12 @@ struct ChatTranscriptView: View {
             .padding(.horizontal, Space.xxl)
             // The first turn's own top padding stands in at the top.
             .padding(.bottom, Space.xl)
+            .coordinateSpace(.named(Self.content))
             .scrollTargetLayout()
         }
         .scrollPosition($position)
         .scrollDismissesKeyboard(.interactively)
+        .toolbarGlassEdge()
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .onScrollPhaseChange { _, phase in
             scrollPhase = phase
@@ -94,15 +120,14 @@ struct ChatTranscriptView: View {
             isScrollingItself = false
             // The pin's own animation may have aimed short of a room that
             // grew meanwhile (the keyboard going away).
-            if isAligningPin, let pinnedID { position.scrollTo(id: pinnedID, anchor: .top) }
+            if isAligningPin, let pinnedID { alignPin(pinnedID) }
             // Growth that came while it was moving.
-            if isFollowing, room == 0 { position.scrollTo(edge: .bottom) }
+            if isFollowing, !isNearBottom { revealEnd() }
         }
-        // Following past the room: each growth brings the end into view.
-        .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, _ in
-            if isFollowing, room == 0, scrollPhase == .idle {
-                position.scrollTo(edge: .bottom)
-            }
+        // Following: each growth brings the reply's end into view, room
+        // or no room.
+        .onChange(of: replyEnd) {
+            if isFollowing, !isNearBottom, scrollPhase == .idle { revealEnd() }
         }
         .onScrollGeometryChange(for: TranscriptScroll.self) { geometry in
             TranscriptScroll(
@@ -111,11 +136,15 @@ struct ChatTranscriptView: View {
                 isAtBottom: TranscriptLayout.isAtBottom(
                     visibleMaxY: geometry.visibleRect.maxY, bottomInset: geometry.contentInsets.bottom,
                     contentHeight: geometry.contentSize.height - room),
-                viewport: max(0, geometry.containerSize.height - geometry.contentInsets.top - geometry.contentInsets.bottom)
+                container: geometry.containerSize.height,
+                content: geometry.contentSize.height,
+                visible: geometry.containerSize.height - geometry.contentInsets.top - geometry.contentInsets.bottom
             )
         } action: { old, new in
             isNearBottom = new.isAtBottom
-            viewportHeight = max(viewportHeight, new.viewport)
+            viewportHeight = max(viewportHeight, new.container)
+            contentHeight = new.content
+            visibleHeight = new.visible
             // The reader's scroll up (a drag, a fling, a status bar tap).
             if TranscriptLayout.stopsFollowing(from: old.offset, to: new.offset,
                                                isReaderScrolling: scrollPhase != .idle && !isScrollingItself) {
@@ -127,7 +156,7 @@ struct ChatTranscriptView: View {
             if room == 0 {
                 isAligningPin = false
             } else if scrollPhase == .idle {
-                position.scrollTo(id: pinnedID, anchor: .top)
+                alignPin(pinnedID)
             }
         }
         // One handler for both, since opening a chat changes the chat and
@@ -163,12 +192,10 @@ struct ChatTranscriptView: View {
         .animation(.easeOut(duration: 0.2), value: isNearBottom)
     }
 
-    /// Pins a message to the top; its reply grows below, not followed. The room starts at
-    /// a full screen (the last turn's height would leave none, and the
-    /// message could only scroll partway up), and the scroll waits a layout
-    /// pass for that room to exist; it then shrinks as the reply grows.
+    /// Pins a message to the top; its reply grows below, not followed. The
+    /// scroll waits a layout pass for the room to exist; the room then
+    /// shrinks as the reply grows, keeping the list's height.
     private func pin(_ id: UUID) {
-        pinnedTurnHeight = 0
         pinnedID = id
         isAligningPin = true
         isFollowing = false
@@ -177,25 +204,42 @@ struct ChatTranscriptView: View {
             // Superseded meanwhile (another chat opened): leave it.
             guard pinnedID == id else { return }
             withAnimation(.easeOut(duration: 0.25)) {
-                position.scrollTo(id: id, anchor: .top)
+                scrollToPin(id)
             }
         }
     }
 
-    /// The jump arrow: to the reply's end, following from there. While
-    /// the pinned turn still has room below, that end is on screen with
-    /// the message pinned; the bottom edge would be blank room.
+    /// Puts a turn's top just under the toolbar: `scrollTo(y:)` already
+    /// counts the toolbar's inset (subtracting it again left the message
+    /// one toolbar-height low).
+    private func scrollToPin(_ id: UUID) {
+        guard let top = turnTops[id] else { return }
+        position.scrollTo(y: top)
+    }
+
+    private static let content = "transcriptContent"
+
+    /// Brings the pinned message back to the top, gliding, never popping.
+    private func alignPin(_ id: UUID) {
+        withAnimation(.easeOut(duration: 0.25)) {
+            scrollToPin(id)
+        }
+    }
+
+    /// The jump arrow (shown only while the reply's end is hidden): to that
+    /// end, following from there.
     private func follow() {
         isAligningPin = false
         isFollowing = true
         isScrollingItself = true
-        withAnimation(.easeOut(duration: 0.2)) {
-            if room > 0, let pinnedID {
-                position.scrollTo(id: pinnedID, anchor: .top)
-            } else {
-                position.scrollTo(edge: .bottom)
-            }
-        }
+        withAnimation(.easeOut(duration: 0.2)) { revealEnd() }
+    }
+
+    /// The reply's end just above the composer. `scrollTo(y:)` puts that
+    /// content y at the visible top, toolbar counted; the room below the
+    /// reply is never scrolled into.
+    private func revealEnd() {
+        position.scrollTo(y: max(0, replyEnd - visibleHeight))
     }
 }
 
@@ -253,7 +297,10 @@ private struct PinKey: Equatable {
 private struct TranscriptScroll: Equatable {
     let offset: CGFloat
     let isAtBottom: Bool
-    let viewport: CGFloat
+    /// The scroll view's full height, for sizing the room.
+    let container: CGFloat
+    let content: CGFloat
+    let visible: CGFloat
 }
 
 private struct UserBubble: View {

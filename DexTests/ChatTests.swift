@@ -264,9 +264,10 @@ struct TranscriptLayoutTests {
     }
 
     @Test func roomShrinksToNothingAsTheReplyGrows() {
-        #expect(TranscriptLayout.room(viewport: 600, turn: 100, padding: 16) == 484)
-        #expect(TranscriptLayout.room(viewport: 600, turn: 584, padding: 16) == 0)
-        #expect(TranscriptLayout.room(viewport: 600, turn: 900, padding: 16) == 0)
+        // The turn's top padding and the gap: 16 + 8.
+        #expect(TranscriptLayout.room(viewport: 600, turn: 100, padding: 24) == 476)
+        #expect(TranscriptLayout.room(viewport: 600, turn: 576, padding: 24) == 0)
+        #expect(TranscriptLayout.room(viewport: 600, turn: 900, padding: 24) == 0)
     }
 
     @Test func theEndIgnoresTheAreaUnderTheComposer() {
