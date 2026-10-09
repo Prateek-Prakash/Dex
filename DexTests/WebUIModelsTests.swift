@@ -45,10 +45,10 @@ enum WebUIFixtures {
     static let models = """
     {"data":[
       {"id":"qwen3.5:9b","name":"qwen3.5:9b","object":"model","created":0,"owned_by":"ollama",
-       "ollama":{"name":"qwen3.5:9b","size":6600000000,"digest":"56671c2ab9384d0e","details":{"format":"gguf","family":"qwen3","parameter_size":"9B",
+       "ollama":{"name":"qwen3.5:9b","size":6600000000,"digest":"56671c2ab9384d0e","modified_at":"2026-10-06T03:25:43.9701648-04:00","details":{"format":"gguf","family":"qwen3","parameter_size":"9B",
                  "quantization_level":"Q4_K_M","context_length":131072},"capabilities":["tools","thinking","completion"],
                  "connection_type":"local","urls":[0]},
-       "loaded":false,"connection_type":"local","tags":[],"actions":[],"filters":[]},
+       "loaded":true,"connection_type":"local","tags":[],"actions":[],"filters":[]},
       {"id":"arena-model","name":"Arena Model","info":{"meta":{"description":"Vote.","model_ids":null}},
        "object":"model","created":0,"owned_by":"arena","arena":true,"actions":[],"filters":[],"tags":[]},
       {"id":"gemma4:12b","name":"Gemma","info":{"meta":{"hidden":true}},"ollama":{"size":8100000000}},
@@ -100,12 +100,41 @@ struct WebUIModelsTests {
         struct Response: Decodable { let data: [WebUIModel] }
         let models = try JSONDecoder().decode(Response.self, from: Data(WebUIFixtures.models.utf8)).data
         #expect(models.filter(\.isListed).map(\.id) == ["qwen3.5:9b", "dolphin3:8b"])
-        #expect(models[0].ollama?.details?.parameterSize == "9B")
-        #expect(ModelsVM.model(models[0]).digest == "56671c2ab9384d0e")
-        #expect(models[0].ollama?.capabilities == ["tools", "thinking", "completion"])
+        let qwen = models[0]
+        #expect(qwen.details?.parameterSize == "9B")
+        #expect(qwen.details?.contextLength == 131_072)
+        #expect(qwen.shortDigest == "56671c2ab938")
+        #expect(qwen.capabilities == ["tools", "thinking", "completion"])
+        #expect(qwen.isLoaded)
+        #expect(qwen.modifiedAt == WebUIModel.date("2026-10-06T03:25:43-04:00"))
+        #expect(qwen.baseName == "qwen3.5")
+        #expect(qwen.tag == "9b")
         #expect(models[1].isArena)
         #expect(models[2].isHidden)
-        #expect(models[3].ollama == nil)
+        #expect(models[3].size == nil)
+        #expect(models[3].capabilities.isEmpty)
+    }
+
+    @Test func ollamaTimesKeepTheirOffset() {
+        let date = WebUIModel.date("2026-10-07T19:39:04.6354653-04:00")
+        #expect(date == WebUIModel.date("2026-10-07T23:39:04Z"))
+        #expect(WebUIModel.date("not a date") == nil)
+    }
+
+    @Test func modelInfoNamesBaseModelMakerAndLicense() throws {
+        let json = #"{"license":"…","model_info":{"general.base_model.0.name":"Gemma 4 12B","general.base_model.0.organization":"Google","general.license":"apache-2.0","general.parameter_count":11907350576}}"#
+        #expect(try JSONDecoder().decode(WebUIModelInfo.self, from: Data(json.utf8))
+                == WebUIModelInfo(baseModel: "Gemma 4 12B", maker: "Google", license: "apache-2.0"))
+        let bare = try JSONDecoder().decode(WebUIModelInfo.self, from: Data(#"{"model_info":{}}"#.utf8))
+        #expect(bare == WebUIModelInfo(baseModel: nil, maker: nil, license: nil))
+    }
+
+    @Test func detailsLabels() {
+        #expect(ModelDetailsView.contextLabel(262_144) == "256K")
+        #expect(ModelDetailsView.contextLabel(65_536) == "64K")
+        #expect(ModelDetailsView.contextLabel(4_000) == 4_000.formatted())
+        #expect(ModelDetailsView.capabilitiesLabel(["completion", "vision", "tools", "thinking"]) == "Thinking • Tools • Vision")
+        #expect(ModelDetailsView.capabilitiesLabel(["completion"]) == nil)
     }
 
     @Test(arguments: [

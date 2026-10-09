@@ -104,6 +104,11 @@ struct WebUIClient: Sendable {
         }
     }
 
+    /// A model's base model, maker and license, through Ollama's `show`.
+    func info(model: String) async throws -> WebUIModelInfo {
+        try decode(WebUIModelInfo.self, from: await send("ollama/api/show", method: "POST", body: ["model": model], timeout: 30))
+    }
+
     func delete(model: String) async throws {
         _ = try await send("ollama/api/delete", method: "DELETE", body: ["model": model])
     }

@@ -177,6 +177,26 @@ struct WebUILiveTests {
         server.disconnect()
     }
 
+    /// The model screens' data from the real server: the list, and one
+    /// model's base model and license. Read only.
+    @Test(.timeLimit(.minutes(1)))
+    func modelsAndTheirDetails() async throws {
+        defer {
+            KeychainService.save("", for: tokenAccount)
+            KeychainService.save("", for: passwordAccount)
+        }
+        let client = WebUIClient(baseURL: Self.base, auth: try auth())
+        let models = try await client.models().filter(\.isListed)
+        #expect(!models.isEmpty)
+        let model = try #require(models.first { $0.details != nil })
+        #expect(model.size != nil)
+        #expect(model.modifiedAt != nil)
+        #expect(model.details?.contextLength != nil)
+        #expect(!model.capabilities.isEmpty)
+        let info = try await client.info(model: model.id)
+        #expect(info.baseModel != nil || info.license != nil)
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func staleTokenIsRenewedBySigningInAgain() async throws {
         defer {

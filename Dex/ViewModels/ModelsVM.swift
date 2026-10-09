@@ -15,16 +15,21 @@ final class ModelsVM: ObservableObject {
     @AppStorage("selectedModel") var selectedModel: String = "--"
     @AppStorage("currentPulls") var currentPulls: [String:String] = [:]
 
-    @Published private(set) var models: [OllamaModel] = []
+    @Published private(set) var models: [WebUIModel] = []
 
     /// The picked model, when the server has it. The choice itself persists
     /// in `selectedModel` and is cleared only once a model list without it loads.
-    var pickedModel: OllamaModel? {
+    var pickedModel: WebUIModel? {
         Self.pickedModel(named: selectedModel, in: models)
     }
 
-    nonisolated static func pickedModel(named name: String, in models: [OllamaModel]) -> OllamaModel? {
-        models.first { $0.name == name }
+    nonisolated static func pickedModel(named name: String, in models: [WebUIModel]) -> WebUIModel? {
+        models.first { $0.id == name }
+    }
+
+    /// A model's base model, maker and license; nil when the server can't say.
+    func info(for model: WebUIModel) async -> WebUIModelInfo? {
+        try? await client?.info(model: model.id)
     }
 
     /// The server's connection; nil while it isn't set up.
@@ -51,8 +56,8 @@ final class ModelsVM: ObservableObject {
     func fetchModels() async {
         guard let client else { return }
         do {
-            models = try await client.models().filter(\.isListed).map(Self.model)
-            let names = models.map { $0.name }
+            models = try await client.models().filter(\.isListed)
+            let names = models.map(\.id)
             if !names.contains(selectedModel) {
                 let defaults = (try? await client.defaultModels()) ?? []
                 selectedModel = defaults.first { names.contains($0) } ?? "--"
@@ -64,7 +69,7 @@ final class ModelsVM: ObservableObject {
 
     func deleteModel(named name: String) {
         guard let client else { return }
-        models.removeAll { $0.name == name }
+        models.removeAll { $0.id == name }
         Task {
             do {
                 try await client.delete(model: name)
@@ -105,13 +110,6 @@ final class ModelsVM: ObservableObject {
         if pullTasks[name] == task {
             pullTasks[name] = nil
         }
-    }
-
-    /// A server model in the shape the model screens show.
-    nonisolated static func model(_ model: WebUIModel) -> OllamaModel {
-        OllamaModel(name: model.id, size: model.ollama?.size ?? 0, digest: model.ollama?.digest ?? "",
-                    details: model.ollama?.details ?? .init(format: nil, family: nil, parameterSize: nil, quantizationLevel: nil),
-                    capabilities: model.ollama?.capabilities)
     }
 
     /// "PULLING ABC... 25%" from one line of a pull; the percentage only

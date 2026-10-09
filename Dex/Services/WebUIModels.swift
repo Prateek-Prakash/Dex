@@ -194,30 +194,71 @@ enum WebUIOutputItem: Decodable, Sendable, Equatable {
     }
 }
 
-/// A model from `/api/models`.
-struct WebUIModel: Decodable, Sendable, Identifiable, Equatable {
+/// A model from `/api/models`, as Dex lists and describes it.
+struct WebUIModel: Decodable, Sendable, Identifiable, Hashable {
     let id: String
     let name: String
     /// Hidden in Open WebUI's model settings.
     let isHidden: Bool
     /// Open WebUI's arena pseudo-model.
     let isArena: Bool
-    /// Ollama's own details, for models Ollama serves.
-    let ollama: Ollama?
+    /// In memory on the server now.
+    let isLoaded: Bool
+    /// Bytes on disk; nil for a model Ollama doesn't serve.
+    let size: Int?
+    let digest: String?
+    /// When it was last pulled or changed.
+    let modifiedAt: Date?
+    let details: Details?
+    /// What it can do, as Ollama names it: "completion", "tools",
+    /// "thinking", "vision", "audio", "embedding".
+    let capabilities: [String]
+
+    struct Details: Decodable, Sendable, Hashable {
+        let format: String?
+        let family: String?
+        let parameterSize: String?
+        let quantizationLevel: String?
+        /// The most context the model takes, in tokens.
+        let contextLength: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case format, family
+            case parameterSize = "parameter_size"
+            case quantizationLevel = "quantization_level"
+            case contextLength = "context_length"
+        }
+    }
 
     /// Shown in Dex's model list.
     var isListed: Bool { !isHidden && !isArena }
 
-    struct Ollama: Decodable, Sendable, Equatable {
-        let size: Int?
-        let digest: String?
-        let details: OllamaModel.Details?
-        let capabilities: [String]?
+    /// "gemma4:12b" -> "gemma4"; "library/model" names keep their namespace.
+    var baseName: String { String(id.split(separator: ":", maxSplits: 1).first ?? Substring(id)) }
+
+    /// "gemma4:12b" -> "12b"; a name without a tag is "latest".
+    var tag: String {
+        let parts = id.split(separator: ":", maxSplits: 1)
+        return parts.count > 1 ? String(parts[1]) : "latest"
     }
 
-    private enum CodingKeys: String, CodingKey { case id, name, info, arena, ollama }
+    /// The hash as Ollama shows it: its first 12 characters.
+    var shortDigest: String { String((digest ?? "").prefix(12)) }
+
+    private enum CodingKeys: String, CodingKey { case id, name, info, arena, ollama, loaded }
     private struct Info: Decodable { let meta: Meta? }
     private struct Meta: Decodable { let hidden: Bool? }
+    private struct Ollama: Decodable {
+        let size: Int?
+        let digest: String?
+        let modifiedAt: String?
+        let details: Details?
+        let capabilities: [String]?
+        enum CodingKeys: String, CodingKey {
+            case size, digest, details, capabilities
+            case modifiedAt = "modified_at"
+        }
+    }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -226,7 +267,44 @@ struct WebUIModel: Decodable, Sendable, Identifiable, Equatable {
         let info = try? container.decodeIfPresent(Info.self, forKey: .info)
         isHidden = info?.meta?.hidden ?? false
         isArena = (try? container.decodeIfPresent(Bool.self, forKey: .arena)) ?? false
-        ollama = try? container.decodeIfPresent(Ollama.self, forKey: .ollama)
+        isLoaded = (try? container.decodeIfPresent(Bool.self, forKey: .loaded)) ?? false
+        let ollama = try? container.decodeIfPresent(Ollama.self, forKey: .ollama)
+        size = ollama?.size
+        digest = ollama?.digest
+        modifiedAt = ollama?.modifiedAt.flatMap(Self.date)
+        details = ollama?.details
+        capabilities = ollama?.capabilities ?? []
+    }
+
+    /// Ollama's times carry up to nine fractional digits and an offset
+    /// ("2026-10-07T19:39:04.6354653-04:00"); the fraction is dropped.
+    static func date(_ text: String) -> Date? {
+        let trimmed = text.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)
+        return ISO8601DateFormatter().date(from: trimmed)
+    }
+}
+
+/// More about a model, from Ollama's `show` through the server's proxy:
+/// what it was built from, by whom, and under which license.
+struct WebUIModelInfo: Decodable, Sendable, Equatable {
+    let baseModel: String?
+    let maker: String?
+    let license: String?
+
+    private enum CodingKeys: String, CodingKey { case modelInfo = "model_info" }
+
+    init(baseModel: String?, maker: String?, license: String?) {
+        self.baseModel = baseModel
+        self.maker = maker
+        self.license = license
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let info = (try? container.decodeIfPresent([String: JSONValue].self, forKey: .modelInfo)) ?? [:]
+        baseModel = info["general.base_model.0.name"]?.string ?? info["general.basename"]?.string
+        maker = info["general.base_model.0.organization"]?.string ?? info["general.organization"]?.string
+        license = info["general.license"]?.string
     }
 }
 

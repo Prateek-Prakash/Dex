@@ -12,7 +12,7 @@ struct ModelsView: View {
     
     @State var showPullDialog: Bool = false
     @State var modelName: String = ""
-    @State var modelToDelete: OllamaModel?
+    @State var modelToDelete: WebUIModel?
     
     var body: some View {
         List {
@@ -75,7 +75,7 @@ struct ModelsView: View {
                         ModelDetailsView(model: model)
                     } label: {
                         LabeledContent {
-                            Text(model.size.byteSize)
+                            Text((model.size ?? 0).byteSize)
                                 .fontWeight(.bold)
                                 .fontDesign(.rounded)
                                 .foregroundStyle(.tertiary)
@@ -86,7 +86,7 @@ struct ModelsView: View {
                                 Text(model.tag.uppercased())
                                     .font(.system(size: 10.0, weight: .bold, design: .rounded))
                                     .foregroundStyle(.secondary)
-                                Text(model.digest.prefix(12).uppercased())
+                                Text(model.shortDigest.uppercased())
                                     .font(.system(size: 9.0, weight: .thin, design: .monospaced))
                                     .foregroundStyle(.secondary)
                             }
@@ -142,11 +142,11 @@ struct ModelsView: View {
             set: { if !$0 { modelToDelete = nil } }
         ), presenting: modelToDelete) { model in
             Button("Delete", role: .destructive) {
-                modelsVM.deleteModel(named: model.name)
+                modelsVM.deleteModel(named: model.id)
             }
             Button("Cancel", role: .cancel) {}
         } message: { model in
-            Text("\(model.baseName.uppercased())\n\(model.tag.uppercased())\n\(model.digest.prefix(12).uppercased())\n\(model.size.byteSize)")
+            Text("\(model.baseName.uppercased())\n\(model.tag.uppercased())\n\(model.shortDigest.uppercased())\n\((model.size ?? 0).byteSize)")
         }
         .tint(Color.ink)
     }

@@ -107,7 +107,7 @@ struct ComposerView: View {
             Menu {
                 ForEach(modelsVM.models) { model in
                     Button(model.name) {
-                        modelsVM.selectedModel = model.name
+                        modelsVM.selectedModel = model.id
                     }
                 }
             } label: {
@@ -182,7 +182,7 @@ struct ComposerView: View {
 
     private func send() {
         guard canSend else { return }
-        chatVM.send(message, model: modelsVM.pickedModel?.name, webSearch: serverVM.isWebSearchOn)
+        chatVM.send(message, model: modelsVM.pickedModel?.id, webSearch: serverVM.isWebSearchOn)
         message = ""
         fieldID = UUID()
         // Like Claude: the keyboard closes on send, the reply in full view.

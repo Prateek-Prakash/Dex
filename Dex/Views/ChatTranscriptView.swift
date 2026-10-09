@@ -466,7 +466,7 @@ private struct ReplyView: View {
 
     private var retryButton: some View {
         Button {
-            chatVM.retry(model: modelsVM.pickedModel?.name, webSearch: serverVM.isWebSearchOn)
+            chatVM.retry(model: modelsVM.pickedModel?.id, webSearch: serverVM.isWebSearchOn)
         } label: {
             HStack(spacing: Space.s) {
                 IconlyIcon(.refresh, .inlineButton)

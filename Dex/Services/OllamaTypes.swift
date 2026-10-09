@@ -7,39 +7,6 @@
 
 import Foundation
 
-/// An installed model, as Ollama describes it (through Open WebUI).
-struct OllamaModel: Codable, Sendable, Identifiable, Hashable {
-    let name: String
-    let size: Int
-    let digest: String
-    let details: Details
-    let capabilities: [String]?
-
-    var id: String { name }
-
-    /// "gemma4:12b" -> "gemma4"; "library/model" names keep their namespace.
-    var baseName: String { String(name.split(separator: ":", maxSplits: 1).first ?? Substring(name)) }
-
-    /// "gemma4:12b" -> "12b"; a name without a tag is "latest".
-    var tag: String {
-        let parts = name.split(separator: ":", maxSplits: 1)
-        return parts.count > 1 ? String(parts[1]) : "latest"
-    }
-
-    struct Details: Codable, Sendable, Hashable {
-        let format: String?
-        let family: String?
-        let parameterSize: String?
-        let quantizationLevel: String?
-
-        enum CodingKeys: String, CodingKey {
-            case format, family
-            case parameterSize = "parameter_size"
-            case quantizationLevel = "quantization_level"
-        }
-    }
-}
-
 /// One line of a `/api/pull` stream.
 struct OllamaPullProgress: Decodable, Sendable {
     let status: String?

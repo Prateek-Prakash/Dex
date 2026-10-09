@@ -285,6 +285,18 @@ extension StubbedNetworkTests {
             #expect(try await client.models().map(\.id) == ["arena-model", "dolphin3:8b", "gemma4:12b", "qwen3.5:9b"])
         }
 
+        @Test func modelInfoGoesThroughShow() async throws {
+            let client = client { request in
+                request.url?.path == "/api/v1/auths/signin" ? Self.signIn()
+                    : .init(body: #"{"model_info":{"general.base_model.0.name":"Gemma 4 12B","general.license":"apache-2.0"}}"#)
+            }
+            let info = try await client.info(model: "gemma4:12b")
+            #expect(info.baseModel == "Gemma 4 12B")
+            let request = try #require(StubProtocol.requests.last)
+            #expect(request.url?.path == "/ollama/api/show")
+            #expect(Self.body(request) as? [String: String] == ["model": "gemma4:12b"])
+        }
+
         @Test func pullGoesThroughProxy() async throws {
             let client = client { request in
                 request.url?.path == "/api/v1/auths/signin" ? Self.signIn()
