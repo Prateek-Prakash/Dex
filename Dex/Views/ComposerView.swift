@@ -182,7 +182,7 @@ struct ComposerView: View {
 
     private func send() {
         guard canSend else { return }
-        chatVM.send(message, client: serverVM.client, model: modelsVM.pickedModel)
+        chatVM.send(message, client: serverVM.client, model: modelsVM.pickedModel, web: serverVM.webClient)
         message = ""
         fieldID = UUID()
         // Like Claude: the keyboard closes on send, the reply in full view.

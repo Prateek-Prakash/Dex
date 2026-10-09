@@ -146,6 +146,8 @@ final class Message {
     var role: String = ChatMessage.Role.user.rawValue
     var content: String = ""
     var thinking: String?
+    /// `ChatMessage.lookups` as JSON.
+    var lookups: String?
     var createdAt: Date = Date()
     var sequence: Int = 0
     var model: String?
@@ -194,6 +196,7 @@ final class Message {
         role = message.role.rawValue
         content = message.content
         thinking = message.thinking
+        lookups = message.lookups.flatMap { try? JSONEncoder().encode($0) }.map { String(decoding: $0, as: UTF8.self) }
         createdAt = message.createdAt
         sequence = message.sequence
         model = message.model
@@ -214,6 +217,7 @@ extension ChatMessage {
             role: Role(rawValue: stored.role) ?? .user,
             content: stored.content,
             thinking: stored.thinking,
+            lookups: stored.lookups.flatMap { try? JSONDecoder().decode([WebLookup].self, from: Data($0.utf8)) },
             createdAt: stored.createdAt,
             sequence: stored.sequence,
             model: stored.model,

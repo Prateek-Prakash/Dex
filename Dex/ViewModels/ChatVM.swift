@@ -117,7 +117,9 @@ final class ChatVM: ObservableObject {
         return last.role == .assistant && (last.status == .failed || last.status == .stopped)
     }
 
-    func send(_ text: String, client: OllamaClient?, model: OllamaModel?) {
+    /// Sends `text` and asks for a reply. With `web` (an ollama.com client),
+    /// a model that can call tools may search the web for it.
+    func send(_ text: String, client: OllamaClient?, model: OllamaModel?, web: OllamaClient? = nil) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isStreaming else { return }
         let session = current ?? ChatSession(isIncognito: isIncognito)
@@ -126,15 +128,15 @@ final class ChatVM: ObservableObject {
         session.messages.append(message)
         save(message, in: session)
         publish(session)
-        reply(in: session, client: client, model: model)
+        reply(in: session, client: client, model: model, web: web)
     }
 
     /// Replaces the last failed or stopped reply with a new one.
-    func retry(client: OllamaClient?, model: OllamaModel?) {
+    func retry(client: OllamaClient?, model: OllamaModel?, web: OllamaClient? = nil) {
         guard canRetry, let session = current else { return }
         forget(session.messages.removeLast().id, in: session)
         publish(session)
-        reply(in: session, client: client, model: model)
+        reply(in: session, client: client, model: model, web: web)
     }
 
     /// Ends the reply on screen where it is; what streamed so far stays.
@@ -400,7 +402,8 @@ final class ChatVM: ObservableObject {
     }
 
     /// What the model sees: the user's messages and the replies that have
-    /// text. Failed replies and reasoning stay out.
+    /// text. Failed replies, reasoning and what earlier replies read on the
+    /// web stay out.
     nonisolated static func history(_ messages: [ChatMessage]) -> [OllamaChatRequest.Message] {
         messages
             .sorted { $0.sequence < $1.sequence }
@@ -413,7 +416,7 @@ final class ChatVM: ObservableObject {
             .map { OllamaChatRequest.Message(role: $0.role.rawValue, content: $0.content) }
     }
 
-    private func reply(in session: ChatSession, client: OllamaClient?, model: OllamaModel?) {
+    private func reply(in session: ChatSession, client: OllamaClient?, model: OllamaModel?, web: OllamaClient?) {
         let history = Self.history(session.messages)
         let reply = ChatMessage(role: .assistant, sequence: nextSequence(session), model: model?.name, status: .streaming)
         session.messages.append(reply)
@@ -430,34 +433,51 @@ final class ChatVM: ObservableObject {
         let request = OllamaChatRequest(
             model: model.name,
             messages: history,
-            think: model.capabilities?.contains("thinking") == true ? true : nil
+            think: model.capabilities?.contains("thinking") == true ? true : nil,
+            tools: web != nil && model.capabilities?.contains("tools") == true ? WebTools.definitions : nil
         )
         session.streamTask = Task {
-            await stream(reply.id, in: session, request: request, client: client)
+            await stream(reply.id, in: session, request: request, client: client, web: web)
         }
         session.checkpointTask = Task {
             await checkpoint(reply.id, in: session)
         }
     }
 
-    private func stream(_ id: UUID, in session: ChatSession, request: OllamaChatRequest, client: OllamaClient) async {
+    /// Streams the reply. A model that calls tools gets their results and is
+    /// asked again, in the same reply, until it answers; those results live
+    /// only in this request, so later turns don't carry them.
+    private func stream(_ id: UUID, in session: ChatSession, request: OllamaChatRequest, client: OllamaClient,
+                        web: OllamaClient?) async {
         var request = request
         var content = ""
         var thinking = ""
+        var lookups: [WebLookup] = []
+        var budget = WebTools.Budget()
+        var rounds = 0
+        /// The first round's: the chat as the next turn sends it, without
+        /// what the tools brought in.
+        var promptTokens: Int?
         var lastShown = Date.distantPast
         func show() {
             update(id, in: session) {
                 $0.content = content
                 $0.thinking = thinking.isEmpty ? nil : thinking
+                $0.lookups = lookups.isEmpty ? nil : lookups
             }
             lastShown = Date()
         }
         while true {
             do {
                 var final: OllamaChatChunk?
+                var said = ""
+                var calls: [OllamaToolCall] = []
                 for try await chunk in client.chat(request) {
-                    content += chunk.message?.content ?? ""
+                    let piece = chunk.message?.content ?? ""
+                    said += piece
+                    content += piece
                     thinking += chunk.message?.thinking ?? ""
+                    calls += chunk.message?.toolCalls ?? []
                     if chunk.done == true { final = chunk }
                     // Redrawing the answer per token is wasted work; 20 a second reads as live.
                     if Date().timeIntervalSince(lastShown) >= 0.05 { show() }
@@ -469,12 +489,36 @@ final class ChatVM: ObservableObject {
                 guard let final else {
                     return finish(id, in: session, status: .failed, error: "The answer was cut off before it finished.")
                 }
-                update(id, in: session) {
-                    $0.promptTokens = final.promptEvalCount
-                    $0.outputTokens = final.evalCount
-                }
+                promptTokens = promptTokens ?? final.promptEvalCount
                 if final.doneReason == "length" {
                     return finish(id, in: session, status: .failed, error: "The answer reached the model's length limit and was cut off.")
+                }
+                if !calls.isEmpty, let web, request.tools != nil {
+                    rounds += 1
+                    request.messages.append(.init(role: "assistant", content: said, toolCalls: calls))
+                    for call in calls {
+                        let index = lookups.count
+                        if let lookup = WebTools.lookup(for: call) {
+                            lookups.append(lookup)
+                            show()
+                        }
+                        let (result, lookup) = await WebTools.run(call, client: web, budget: &budget)
+                        if let lookup, index < lookups.count { lookups[index] = lookup }
+                        request.messages.append(.init(role: "tool", content: result, toolName: call.function.name))
+                        if Task.isCancelled {
+                            show()
+                            return finish(id, in: session, status: .stopped)
+                        }
+                    }
+                    if !content.isEmpty && !content.hasSuffix("\n") { content += "\n\n" }
+                    show()
+                    // The last round goes without tools, so the model answers.
+                    if rounds >= WebTools.maxRounds { request.tools = nil }
+                    continue
+                }
+                update(id, in: session) {
+                    $0.promptTokens = promptTokens
+                    $0.outputTokens = final.evalCount
                 }
                 if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     return finish(id, in: session, status: .failed, error: "No answer came back.")
@@ -483,10 +527,9 @@ final class ChatVM: ObservableObject {
                 return name(in: session, client: client, request: request)
             } catch OllamaClient.Failure.http(let status, let message)
                         where status == 400 && request.think != nil && message.localizedCaseInsensitiveContains("does not support thinking") {
-                // The model list said it can think; the model disagrees. Ask again without.
+                // The model list said it can think; the model disagrees. Ask again
+                // without; it refused before saying anything, so earlier rounds stand.
                 request.think = nil
-                content = ""
-                thinking = ""
             } catch {
                 show()
                 if Task.isCancelled || (error as? URLError)?.code == .cancelled || error is CancellationError {

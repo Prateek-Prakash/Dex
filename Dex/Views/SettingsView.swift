@@ -36,6 +36,14 @@ struct SettingsView: View {
                         SecureField("Access Client Secret", text: $serverVM.accessClientSecret)
                             .onChange(of: serverVM.accessClientSecret) { serverVM.saveAccess() }
                     }
+                    Section {
+                        SecureField("Ollama API Key", text: $serverVM.ollamaAPIKey)
+                            .onChange(of: serverVM.ollamaAPIKey) { serverVM.saveAPIKey() }
+                        if !serverVM.ollamaAPIKey.isEmpty {
+                            Toggle("Web Search", isOn: $serverVM.isWebSearchOn)
+                                .toggleStyle(.ink)
+                        }
+                    }
                     // After the connection settings it depends on, and only once
                     // a server answers: with none there's nothing to manage.
                     if serverVM.isReachable {

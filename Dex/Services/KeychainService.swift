@@ -14,6 +14,7 @@ enum KeychainService {
 
     static let accessClientID = "ollama.access.id"
     static let accessClientSecret = "ollama.access.secret"
+    static let ollamaAPIKey = "ollama.com.key"
 
     static func load(_ account: String) -> String {
         let query: [String: Any] = [

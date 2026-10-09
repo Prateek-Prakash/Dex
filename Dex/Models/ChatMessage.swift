@@ -23,6 +23,8 @@ struct ChatMessage: Identifiable, Equatable, Sendable {
     var content: String = ""
     /// The model's reasoning, when it thinks out loud; never sent back.
     var thinking: String?
+    /// The web searches and page reads behind a reply, without their text.
+    var lookups: [WebLookup]?
     var createdAt = Date()
     /// Order within the chat; breaks ties between equal timestamps.
     var sequence: Int

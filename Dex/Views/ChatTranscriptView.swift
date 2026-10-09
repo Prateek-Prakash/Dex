@@ -332,11 +332,15 @@ private struct ReplyView: View {
     let isLast: Bool
 
     @State private var showsThinking: Bool = false
+    @State private var showsLookups: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.l) {
             if let thinking = message.thinking {
                 thinkingSection(thinking)
+            }
+            if let lookups = message.lookups {
+                lookupsSection(lookups)
             }
             if !message.content.isEmpty {
                 ChatMarkdownView(text: message.content)
@@ -386,6 +390,57 @@ private struct ReplyView: View {
         }
     }
 
+    /// The web searches and page reads behind the reply, folded away like
+    /// its reasoning; each source opens in the browser.
+    private func lookupsSection(_ lookups: [WebLookup]) -> some View {
+        // A lookup left running by a reply that was cut off isn't searching.
+        let isSearching = message.status == .streaming && lookups.contains { $0.state == .running }
+        return VStack(alignment: .leading, spacing: Space.m) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showsLookups.toggle()
+                }
+            } label: {
+                HStack(spacing: Space.s) {
+                    Text(isSearching ? "Searching Web" : "Searched Web")
+                        .font(.subheadline)
+                        .fontDesign(.rounded)
+                    IconlyIcon(.chevronDown, .disclosure)
+                        .rotationEffect(.degrees(showsLookups ? 180.0 : 0.0))
+                }
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            if showsLookups {
+                VStack(alignment: .leading, spacing: Space.m) {
+                    ForEach(Array(lookups.enumerated()), id: \.offset) { _, lookup in
+                        VStack(alignment: .leading, spacing: Space.s) {
+                            Text(lookup.kind == .search ? "Searched “\(lookup.subject)”" : "Read “\(lookup.subject)”")
+                                .foregroundStyle(lookup.state == .failed ? Color.destructive : Color.ink)
+                                .lineLimit(2)
+                            if let error = lookup.error {
+                                Text(error)
+                                    .foregroundStyle(.secondary)
+                            }
+                            ForEach(Array(lookup.sources.enumerated()), id: \.offset) { _, source in
+                                if let url = URL(string: source.url) {
+                                    Link(source.title, destination: url)
+                                        .foregroundStyle(Color.link)
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
+                    }
+                }
+                .font(.subheadline)
+                .padding(.leading, Space.l)
+                .overlay(alignment: .leading) {
+                    Capsule().fill(Color.border).frame(width: 2.0)
+                }
+            }
+        }
+    }
+
     /// Still reasoning: no answer text yet.
     private var isThinking: Bool {
         message.status == .streaming && message.content.isEmpty
@@ -419,7 +474,7 @@ private struct ReplyView: View {
 
     private var retryButton: some View {
         Button {
-            chatVM.retry(client: serverVM.client, model: modelsVM.pickedModel)
+            chatVM.retry(client: serverVM.client, model: modelsVM.pickedModel, web: serverVM.webClient)
         } label: {
             HStack(spacing: Space.s) {
                 IconlyIcon(.refresh, .inlineButton)
