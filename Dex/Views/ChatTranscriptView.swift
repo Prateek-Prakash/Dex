@@ -415,7 +415,7 @@ private struct ReplyView: View {
                 VStack(alignment: .leading, spacing: Space.m) {
                     ForEach(Array(lookups.enumerated()), id: \.offset) { _, lookup in
                         VStack(alignment: .leading, spacing: Space.s) {
-                            Text(lookup.kind == .search ? "Searched “\(lookup.subject)”" : "Read “\(lookup.subject)”")
+                            Text(lookup.label)
                                 .foregroundStyle(lookup.state == .failed ? Color.destructive : Color.ink)
                                 .lineLimit(2)
                             if let error = lookup.error {
@@ -474,7 +474,7 @@ private struct ReplyView: View {
 
     private var retryButton: some View {
         Button {
-            chatVM.retry(client: serverVM.client, model: modelsVM.pickedModel, web: serverVM.webClient)
+            chatVM.retry(model: modelsVM.pickedModel?.name, webSearch: serverVM.isWebSearchOn)
         } label: {
             HStack(spacing: Space.s) {
                 IconlyIcon(.refresh, .inlineButton)

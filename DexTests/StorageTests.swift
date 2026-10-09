@@ -36,279 +36,101 @@ extension StubbedNetworkTests {
     @Suite(.serialized)
     @MainActor
     struct ChatStorageTests {
-        private static let model = OllamaModel(
-            name: "gemma4:12b", size: 0, digest: "",
-            details: .init(format: nil, family: nil, parameterSize: nil, quantizationLevel: nil),
-            capabilities: ["completion", "thinking"])
-
-        private static let reply = """
-            {"message":{"content":"","thinking":"Hmm."}}
-            {"message":{"content":"Hello there"}}
-            {"message":{"content":""},"done":true,"done_reason":"stop","prompt_eval_count":10,"eval_count":5}
-
-            """
-
-        /// Chat replies stream `reply`; the naming request gets `title`.
-        private static func client(title: String = "greeting the user", status: Int = 200) -> OllamaClient {
-            OllamaStubProtocol.client { request in
-                let body = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
-                if body.contains("Name this conversation") {
-                    return .init(status: status, contentType: "application/x-ndjson",
-                                 body: #"{"message":{"content":"\#(title)"},"done":true}"# + "\n")
-                }
-                return .init(contentType: "application/x-ndjson", body: reply)
-            }
-        }
-
-        private static func vm() -> (ChatVM, ModelContext) {
+        private static func vm() -> (ChatVM, FakeServer, ModelContext) {
             let context = ModelContext(Storage.inMemory())
+            let server = FakeServer()
             let vm = ChatVM()
             vm.context = context
-            return (vm, context)
+            vm.server = server
+            vm.followInterval = .milliseconds(10)
+            return (vm, server, context)
         }
 
         private static func chats(_ context: ModelContext) throws -> [Chat] {
             try context.fetch(FetchDescriptor<Chat>())
         }
 
-        @Test func sentChatIsSavedAndNamed() async throws {
-            let (vm, context) = Self.vm()
-            vm.send("Hi there", client: Self.client(), model: Self.model)
-            #expect(try Self.chats(context).first?.title == "Hi there")
+        /// Sends `text` and has the server answer `reply`.
+        private static func exchange(_ text: String, _ reply: String, _ vm: ChatVM, _ server: FakeServer) async throws {
+            vm.send(text, model: "gemma4:12b")
             await vm.waitForReply()
-            await vm.waitForTitle()
-
-            let chat = try #require(try Self.chats(context).first)
-            #expect(try Self.chats(context).count == 1)
-            #expect(chat.title == "Greeting the User")
-            #expect(chat.model == "gemma4:12b")
-            let stored = chat.sortedMessages
-            #expect(stored.map(\.role) == ["user", "assistant"])
-            #expect(stored.map(\.content) == ["Hi there", "Hello there"])
-            #expect(stored[1].status == "done")
-            #expect(stored[1].thinking == "Hmm.")
-            #expect(stored[1].promptTokens == 10)
-            #expect(stored[1].outputTokens == 5)
-            #expect(stored.map(\.id) == vm.messages.map(\.id))
-
-            // Naming is a separate request, never a message, and doesn't think.
-            let naming = try #require(OllamaStubProtocol.requests.last?.httpBody)
-            let body = try #require(try JSONSerialization.jsonObject(with: naming) as? [String: Any])
-            #expect(body["think"] as? Bool == false)
-            #expect((body["options"] as? [String: Any])?["num_ctx"] as? Int == 65_536)
-            #expect(vm.messages.count == 2)
+            let id = try #require(vm.messages.last?.id)
+            server.send(.finished(chatID: vm.chat?.id ?? "", messageID: id, output: [.message(id: "m", text: reply)], usage: nil))
         }
 
         @Test func renameTrimsAndIgnoresBlank() async throws {
-            let (vm, _) = Self.vm()
-            vm.send("Hi there", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            await vm.waitForTitle()
+            let (vm, server, _) = Self.vm()
+            try await Self.exchange("Hi there", "Hello", vm, server)
             let chat = try #require(vm.chat)
-            let updated = chat.updatedAt
             vm.rename(chat, to: "  Trip Plans \n")
             #expect(chat.title == "Trip Plans")
-            #expect(chat.updatedAt >= updated)
             vm.rename(chat, to: "   ")
             #expect(chat.title == "Trip Plans")
         }
 
-        @Test func renameBeforeNamingFinishesWins() async throws {
-            let (vm, _) = Self.vm()
-            vm.send("Hi there", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            vm.rename(try #require(vm.chat), to: "Mine")
-            await vm.waitForTitle()
-            #expect(vm.chat?.title == "Mine")
-        }
-
-        @Test func failedNamingKeepsFallback() async throws {
-            let (vm, context) = Self.vm()
-            vm.send("Hi there", client: Self.client(status: 500), model: Self.model)
-            await vm.waitForReply()
-            await vm.waitForTitle()
-            #expect(try Self.chats(context).first?.title == "Hi there")
-        }
-
-        @Test func renameDuringNamingWins() async throws {
-            let (vm, context) = Self.vm()
-            vm.send("Hi there", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            try Self.chats(context).first?.title = "Mine"
-            await vm.waitForTitle()
-            #expect(try Self.chats(context).first?.title == "Mine")
-        }
-
-        @Test func incognitoIsNeverSaved() async throws {
-            let (vm, context) = Self.vm()
-            vm.isIncognito = true
-            vm.send("Secret", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            await vm.waitForTitle()
-            #expect(try Self.chats(context).isEmpty)
-            #expect(try context.fetch(FetchDescriptor<Message>()).isEmpty)
-            #expect(vm.chat == nil)
-        }
-
-        @Test func reopenedChatContinues() async throws {
-            let (vm, context) = Self.vm()
-            vm.send("First", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            await vm.waitForTitle()
+        @Test func renameLeavesRecentOrderAlone() async throws {
+            let (vm, server, _) = Self.vm()
+            try await Self.exchange("Hi", "Hello", vm, server)
             let chat = try #require(vm.chat)
-
-            vm.reset()
-            #expect(vm.messages.isEmpty)
-            #expect(vm.chat == nil)
-            vm.open(chat)
-            #expect(vm.messages.map(\.content) == ["First", "Hello there"])
-            #expect(vm.contextUsed == 15)
-
-            vm.send("Second", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            #expect(try Self.chats(context).count == 1)
-            #expect(chat.sortedMessages.map(\.sequence) == [0, 1, 2, 3])
-            // Only the first reply names a chat.
-            #expect(chat.title == "Greeting the User")
+            let updatedAt = chat.updatedAt
+            vm.rename(chat, to: "Renamed")
+            vm.togglePin(chat)
+            #expect(chat.updatedAt == updatedAt)
         }
 
-        @Test func retryReplacesStoredReply() async throws {
-            let (vm, context) = Self.vm()
-            vm.send("Hi", client: OllamaStubProtocol.client { _ in
-                .init(contentType: "application/x-ndjson", body: #"{"message":{"content":"Half"}}"# + "\n")
-            }, model: Self.model)
-            await vm.waitForReply()
-            #expect(try context.fetch(FetchDescriptor<Message>()).map(\.status).sorted() == ["done", "failed"])
-
-            vm.retry(client: Self.client(), model: Self.model)
-            await vm.waitForReply()
+        @Test func messagesChainParentsAndChildren() async throws {
+            let (vm, server, _) = Self.vm()
+            try await Self.exchange("First", "One", vm, server)
+            try await Self.exchange("Second", "Two", vm, server)
             let stored = try #require(vm.chat).sortedMessages
-            #expect(stored.map(\.status) == ["done", "done"])
-            #expect(stored.last?.content == "Hello there")
-            #expect(try context.fetch(FetchDescriptor<Message>()).count == 2)
+            #expect(stored.map(\.parentId) == [nil, stored[0].id, stored[1].id, stored[2].id])
+            #expect(stored.map(\.childrenIds) == [[stored[1].id], [stored[2].id], [stored[3].id], []])
+            // Ids take the server's form: lowercase UUIDs.
+            #expect(stored.allSatisfy { $0.id == $0.id.lowercased() && UUID(uuidString: $0.id) != nil })
         }
 
-        @Test func leavingMidReplyLetsItFinish() async throws {
-            let (vm, context) = Self.vm()
-            // Left before the reply's task gets to run.
-            vm.send("Hi", client: Self.client(), model: Self.model)
+        @Test func ownMessagesLeaveAChatRead() async throws {
+            let (vm, server, _) = Self.vm()
+            try await Self.exchange("Hi", "Hello", vm, server)
             let chat = try #require(vm.chat)
-            vm.reset()
-            #expect(vm.messages.isEmpty)
-            #expect(vm.streamingChatIDs == [chat.id])
-            await vm.waitForReply()
-            #expect(chat.sortedMessages.map(\.status) == ["done", "done"])
-            #expect(chat.sortedMessages.last?.content == "Hello there")
-            #expect(vm.streamingChatIDs.isEmpty)
-            #expect(try context.fetch(FetchDescriptor<Message>()).count == 2)
-
-            vm.open(chat)
-            #expect(vm.messages.map(\.content) == ["Hi", "Hello there"])
+            #expect(!chat.isUnread)
+            // Something arriving later, as a reply finished while away would.
+            chat.updatedAt = .now.addingTimeInterval(60)
+            #expect(chat.isUnread)
         }
 
-        @Test func twoChatsReplyAtTheirOwnTime() async throws {
-            let (vm, _) = Self.vm()
-            vm.send("First", client: Self.client(), model: Self.model)
-            let first = try #require(vm.chat)
-            vm.reset()
-            vm.send("Second", client: Self.client(), model: Self.model)
-            let second = try #require(vm.chat)
-            #expect(vm.streamingChatIDs == [first.id, second.id])
-            await vm.waitForReply()
-            #expect(vm.streamingChatIDs.isEmpty)
-            for chat in [first, second] {
-                #expect(chat.sortedMessages.map(\.status) == ["done", "done"])
-            }
-            // The one on screen shows its finished reply.
-            #expect(vm.messages.map(\.content) == ["Second", "Hello there"])
-        }
-
-        @Test func reopenedMidReplyPicksUpLive() async throws {
-            let (vm, _) = Self.vm()
-            vm.send("Hi", client: Self.client(), model: Self.model)
+        @Test func sequenceFollowsMessagesStoredWhileOpen() async throws {
+            let (vm, server, context) = Self.vm()
+            try await Self.exchange("First", "One", vm, server)
             let chat = try #require(vm.chat)
-            vm.reset()
-            vm.open(chat)
-            #expect(vm.isStreaming)
-            await vm.waitForReply()
-            #expect(!vm.isStreaming)
-            #expect(vm.messages.last?.status == .done)
-            #expect(vm.messages.last?.content == "Hello there")
-        }
-
-        @Test func leavingIncognitoMidReplyStopsIt() async throws {
-            let (vm, context) = Self.vm()
-            vm.isIncognito = true
-            vm.send("Secret", client: Self.client(), model: Self.model)
-            vm.reset()
-            #expect(vm.streamingChatIDs.isEmpty)
-            await vm.waitForReply()
-            #expect(try context.fetch(FetchDescriptor<Message>()).isEmpty)
-            #expect(vm.messages.isEmpty)
-        }
-
-        @Test func deletingAChatReplyingOffScreenStopsIt() async throws {
-            let (vm, context) = Self.vm()
-            vm.send("Hi", client: Self.client(), model: Self.model)
-            let chat = try #require(vm.chat)
-            vm.reset()
-            vm.delete(chat)
-            #expect(vm.streamingChatIDs.isEmpty)
-            await vm.waitForReply()
-            #expect(try Self.chats(context).isEmpty)
-            #expect(try context.fetch(FetchDescriptor<Message>()).isEmpty)
-        }
-
-        @Test func sequenceFollowsMessagesSyncedInWhileOpen() async throws {
-            let (vm, context) = Self.vm()
-            vm.send("First", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            let chat = try #require(vm.chat)
-            // An exchange from elsewhere lands in the store.
             for sequence in [2, 3] {
-                let synced = Message(id: Storage.newID())
-                context.insert(synced)
-                synced.chat = chat
-                synced.sequence = sequence
+                let stored = Message(id: Storage.newID())
+                context.insert(stored)
+                stored.chat = chat
+                stored.sequence = sequence
             }
-            vm.send("Second", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
+            try await Self.exchange("Second", "Two", vm, server)
             #expect(chat.sortedMessages.map(\.sequence) == [0, 1, 2, 3, 4, 5])
-            #expect(Array(chat.sortedMessages.suffix(2).map(\.content)) == ["Second", "Hello there"])
+            #expect(Array(chat.sortedMessages.suffix(2).map(\.content)) == ["Second", "Two"])
         }
 
         @Test func refreshShowsWhatLandedInTheStore() async throws {
-            let (vm, context) = Self.vm()
-            vm.send("First", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
+            let (vm, server, context) = Self.vm()
+            try await Self.exchange("First", "One", vm, server)
             let chat = try #require(vm.chat)
-            let messageCount = vm.messages.count
-            // A message lands in the store, and the reply is rewritten there.
-            let synced = Message(id: Storage.newID())
-            context.insert(synced)
-            synced.chat = chat
-            synced.sequence = 2
-            synced.content = "From the iPad"
+            let stored = Message(id: Storage.newID())
+            context.insert(stored)
+            stored.chat = chat
+            stored.sequence = 2
+            stored.content = "Landed"
             try context.save()
-            let reply = try #require(chat.sortedMessages.first { $0.role == "assistant" })
-            reply.content = "Edited elsewhere"
-
             vm.refresh()
-            #expect(vm.messages.count == messageCount + 1)
-            #expect(vm.messages.map(\.sequence) == [0, 1, 2])
-            #expect(vm.messages.last?.content == "From the iPad")
-            #expect(vm.messages[1].content == "Edited elsewhere")
-            // What arrived continues the chat: the next message follows it.
-            vm.send("Next", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            #expect(chat.sortedMessages.map(\.sequence) == [0, 1, 2, 3, 4])
+            #expect(vm.messages.map(\.content) == ["First", "One", "Landed"])
         }
 
-        @Test func refreshAfterDeleteElsewhereClearsTheScreen() async throws {
-            let (vm, context) = Self.vm()
-            vm.send("Hi", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            await vm.waitForTitle()
+        @Test func refreshAfterDeleteClearsTheScreen() async throws {
+            let (vm, server, context) = Self.vm()
+            try await Self.exchange("Hi", "Hello", vm, server)
             context.delete(try #require(vm.chat))
             try context.save()
             vm.refresh()
@@ -322,43 +144,36 @@ extension StubbedNetworkTests {
             var storedReply = local
             storedReply.content = ""
             storedReply.status = .stopped
-            let synced = ChatMessage(role: .user, content: "From the iPad", sequence: 2)
-
-            let merged = ChatVM.merge(local: [user, local], stored: [user, storedReply, synced], replyID: local.id)
-            #expect(merged == [user, local, synced])
+            let landed = ChatMessage(role: .user, content: "Landed", sequence: 2)
+            #expect(ChatVM.merge(local: [user, local], stored: [user, storedReply, landed], replyID: local.id) == [user, local, landed])
             // Gone from the store: kept, saved again when it ends.
             #expect(ChatVM.merge(local: [user, local], stored: [user], replyID: local.id) == [user, local])
-            // Nothing streaming here: the store wins, messages gone there go here.
+            // Nothing streaming here: the store wins.
             #expect(ChatVM.merge(local: [user, storedReply], stored: [user], replyID: nil) == [user])
-            var newer = local
-            newer.content = "Half an answer"
-            #expect(ChatVM.merge(local: [user, local], stored: [user, newer], replyID: nil) == [user, newer])
         }
 
-        @Test func cutOffReplyIsSavedStoppedAndStaysThat() async throws {
-            let (vm, context) = Self.vm()
-            vm.send("Hi", client: Self.client(), model: Self.model)
+        @Test func deletingAChatReplyingOffScreenLetsItGo() async throws {
+            let (vm, server, context) = Self.vm()
+            vm.send("Hi", model: "gemma4:12b")
             await vm.waitForReply()
-            await vm.waitForTitle()
             let chat = try #require(vm.chat)
-            // A reply cut off by a quit a moment ago.
-            let reply = Message(id: Storage.newID())
-            context.insert(reply)
-            reply.chat = chat
-            reply.role = "assistant"
-            reply.sequence = 2
-            reply.status = "streaming"
-            try context.save()
-
+            let id = try #require(vm.messages.last?.id)
             vm.reset()
-            vm.open(chat)
-            #expect(vm.messages.last?.status == .stopped)
-            #expect(vm.canRetry)
-            #expect(reply.status == "stopped")
-            // A rename, or any later save, leaves it stopped.
-            vm.rename(chat, to: "Renamed")
-            vm.refresh()
-            #expect(vm.messages.last?.status == .stopped)
+            vm.delete(chat)
+            #expect(vm.streamingChatIDs.isEmpty)
+            server.send(.finished(chatID: "c1", messageID: id, output: [.message(id: "m", text: "Late")], usage: nil))
+            #expect(try Self.chats(context).isEmpty)
+            #expect(try context.fetch(FetchDescriptor<Message>()).isEmpty)
+        }
+
+        @Test func deletingOpenChatClearsScreenAndMessages() async throws {
+            let (vm, server, context) = Self.vm()
+            try await Self.exchange("Hi", "Hello", vm, server)
+            vm.delete(try #require(vm.chat))
+            #expect(vm.messages.isEmpty)
+            #expect(vm.chat == nil)
+            #expect(try Self.chats(context).isEmpty)
+            #expect(try context.fetch(FetchDescriptor<Message>()).isEmpty)
         }
 
         @Test func inChatFindsOnlyThatChatsMessages() throws {
@@ -376,70 +191,6 @@ extension StubbedNetworkTests {
             try context.save()
             let found = try context.fetch(FetchDescriptor<Message>(predicate: Message.inChat(mine.id)))
             #expect(Set(found.map(\.content)) == ["A", "B"])
-        }
-
-        @Test func messagesChainParentsAndChildren() async throws {
-            let (vm, _) = Self.vm()
-            vm.send("First", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            vm.send("Second", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            let stored = try #require(vm.chat).sortedMessages
-            #expect(stored.map(\.parentId) == [nil, stored[0].id, stored[1].id, stored[2].id])
-            #expect(stored.map(\.childrenIds) == [[stored[1].id], [stored[2].id], [stored[3].id], []])
-            // Ids take the server's form: lowercase UUIDs.
-            #expect(stored.allSatisfy { $0.id == $0.id.lowercased() && UUID(uuidString: $0.id) != nil })
-        }
-
-        @Test func retryDropsTheOldReplyFromItsParent() async throws {
-            let (vm, _) = Self.vm()
-            vm.send("Hi", client: Self.client(status: 200), model: nil)
-            await vm.waitForReply()
-            let failed = try #require(vm.messages.last)
-            #expect(failed.status == .failed)
-            vm.retry(client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            let stored = try #require(vm.chat).sortedMessages
-            #expect(stored.count == 2)
-            #expect(stored[0].childrenIds == [stored[1].id])
-            #expect(!stored[0].childrenIds.contains(failed.id))
-            // The in-memory copy agrees, so saving it again keeps the link.
-            #expect(vm.messages[0].childrenIds == [stored[1].id])
-        }
-
-        @Test func ownMessagesLeaveAChatRead() async throws {
-            let (vm, _) = Self.vm()
-            vm.send("Hi", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            let chat = try #require(vm.chat)
-            #expect(!chat.isUnread)
-            // Something arriving later, as a server reply finished away would.
-            chat.updatedAt = .now.addingTimeInterval(60)
-            #expect(chat.isUnread)
-        }
-
-        @Test func renameLeavesRecentOrderAlone() async throws {
-            let (vm, _) = Self.vm()
-            vm.send("Hi", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            await vm.waitForTitle()
-            let chat = try #require(vm.chat)
-            let updatedAt = chat.updatedAt
-            vm.rename(chat, to: "Renamed")
-            vm.togglePin(chat)
-            #expect(chat.updatedAt == updatedAt)
-        }
-
-        @Test func deletingOpenChatClearsScreenAndMessages() async throws {
-            let (vm, context) = Self.vm()
-            vm.send("Hi", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            await vm.waitForTitle()
-            vm.delete(try #require(vm.chat))
-            #expect(vm.messages.isEmpty)
-            #expect(vm.chat == nil)
-            #expect(try Self.chats(context).isEmpty)
-            #expect(try context.fetch(FetchDescriptor<Message>()).isEmpty)
         }
     }
 }
@@ -628,78 +379,90 @@ struct PinTests {
     }
 }
 
-/// Organize: moving chats into and out of folders, and a folder's New Session.
-@MainActor
-struct OrganizeTests {
-    private static func vm() -> (ChatVM, ModelContext) {
-        let context = ModelContext(Storage.inMemory())
-        let vm = ChatVM()
-        vm.context = context
-        return (vm, context)
-    }
+extension StubbedNetworkTests {
+    /// Organize: moving chats into and out of folders, and a folder's New Session.
+    @Suite(.serialized)
+    @MainActor
+    struct OrganizeTests {
+        private static func vm() -> (ChatVM, ModelContext) {
+            let context = ModelContext(Storage.inMemory())
+            let vm = ChatVM()
+            vm.context = context
+            vm.server = FakeServer()
+            return (vm, context)
+        }
 
-    @Test func moveIntoAcrossAndOutKeepsRecentOrder() throws {
-        let (vm, context) = Self.vm()
-        let lab = Folder(name: "Lab")
-        let recipes = Folder(name: "Recipes")
-        let chat = Chat(title: "Notes")
-        [lab, recipes].forEach(context.insert)
-        context.insert(chat)
-        let updatedAt = chat.updatedAt
+        /// Sends `text` and waits for the server to take it, saving the chat.
+        private static func send(_ text: String, _ vm: ChatVM) async {
+            vm.send(text, model: "gemma4:12b")
+            await vm.waitForReply()
+            // Ready for the next message: the reply isn't awaited.
+            vm.stop()
+        }
 
-        vm.move(chat, to: lab)
-        #expect(chat.folder === lab)
-        #expect(DrawerItem(chat).kind == .folderChat)
-        vm.move(chat, to: recipes)
-        #expect(chat.folder === recipes)
-        #expect(lab.chats.isEmpty)
-        vm.move(chat, to: nil)
-        #expect(chat.folder == nil)
-        #expect(DrawerItem(chat).kind == .chat)
-        #expect(chat.updatedAt == updatedAt)
-        #expect(!context.hasChanges)
-    }
+        @Test func moveIntoAcrossAndOutKeepsRecentOrder() throws {
+            let (vm, context) = Self.vm()
+            let lab = Folder(name: "Lab")
+            let recipes = Folder(name: "Recipes")
+            let chat = Chat(title: "Notes")
+            [lab, recipes].forEach(context.insert)
+            context.insert(chat)
+            let updatedAt = chat.updatedAt
 
-    @Test func folderNewSessionJoinsTheFolderWithItsFirstMessage() throws {
-        let (vm, context) = Self.vm()
-        let lab = Folder(name: "Lab")
-        context.insert(lab)
+            vm.move(chat, to: lab)
+            #expect(chat.folder === lab)
+            #expect(DrawerItem(chat).kind == .folderChat)
+            vm.move(chat, to: recipes)
+            #expect(chat.folder === recipes)
+            #expect(lab.chats.isEmpty)
+            vm.move(chat, to: nil)
+            #expect(chat.folder == nil)
+            #expect(DrawerItem(chat).kind == .chat)
+            #expect(chat.updatedAt == updatedAt)
+            #expect(!context.hasChanges)
+        }
 
-        // Abandoned before a message: nothing lands in the folder.
-        vm.reset(into: lab)
-        vm.reset()
-        vm.send("Loose", client: nil, model: nil)
-        #expect(vm.chat?.folder == nil)
+        @Test func folderNewSessionJoinsTheFolderWithItsFirstMessage() async throws {
+            let (vm, context) = Self.vm()
+            let lab = Folder(name: "Lab")
+            context.insert(lab)
 
-        vm.reset(into: lab)
-        vm.send("Inside", client: nil, model: nil)
-        #expect(vm.chat?.folder === lab)
-        // Only the first chat after it: the next new one is on its own.
-        vm.reset()
-        vm.send("After", client: nil, model: nil)
-        #expect(vm.chat?.folder == nil)
+            // Abandoned before a message: nothing lands in the folder.
+            vm.reset(into: lab)
+            vm.reset()
+            await Self.send("Loose", vm)
+            #expect(vm.chat?.folder == nil)
 
-        // Opening a saved chat drops a pending folder.
-        let saved = Chat(title: "Saved")
-        context.insert(saved)
-        vm.reset(into: lab)
-        vm.open(saved)
-        vm.reset()
-        vm.send("Fresh", client: nil, model: nil)
-        #expect(vm.chat?.folder == nil)
-        #expect(try context.fetch(FetchDescriptor<Chat>(predicate: Chat.inFolder(lab.id))).map(\.title) == ["Inside"])
-    }
+            vm.reset(into: lab)
+            await Self.send("Inside", vm)
+            #expect(vm.chat?.folder === lab)
+            // Only the first chat after it: the next new one is on its own.
+            vm.reset()
+            await Self.send("After", vm)
+            #expect(vm.chat?.folder == nil)
 
-    @Test func folderDeletedBeforeTheFirstMessageIsLeftOut() throws {
-        let (vm, context) = Self.vm()
-        let lab = Folder(name: "Lab")
-        context.insert(lab)
-        try context.save()
-        vm.reset(into: lab)
-        context.delete(lab)
-        try context.save()
-        vm.send("Hi", client: nil, model: nil)
-        #expect(vm.chat?.folder == nil)
+            // Opening a saved chat drops a pending folder.
+            let saved = Chat(title: "Saved")
+            context.insert(saved)
+            vm.reset(into: lab)
+            vm.open(saved)
+            vm.reset()
+            await Self.send("Fresh", vm)
+            #expect(vm.chat?.folder == nil)
+            #expect(try context.fetch(FetchDescriptor<Chat>(predicate: Chat.inFolder(lab.id))).map(\.title) == ["Inside"])
+        }
+
+        @Test func folderDeletedBeforeTheFirstMessageIsLeftOut() async throws {
+            let (vm, context) = Self.vm()
+            let lab = Folder(name: "Lab")
+            context.insert(lab)
+            try context.save()
+            vm.reset(into: lab)
+            context.delete(lab)
+            try context.save()
+            await Self.send("Hi", vm)
+            #expect(vm.chat?.folder == nil)
+        }
     }
 }
 

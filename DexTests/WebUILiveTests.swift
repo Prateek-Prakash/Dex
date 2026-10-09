@@ -6,29 +6,36 @@
 //
 
 import Foundation
+import SwiftData
 import Testing
 @testable import Dex
 
-/// Against the real server, with the login token in `~/.webui-jwt`. Off
-/// unless asked for: `TEST_RUNNER_DEX_LIVE=1 xcodebuild test …`.
+/// Against the real server, signing in as Dex does. Off unless asked for:
+/// `Tools/live-tests.sh` reads the account from the Mac's Keychain and runs
+/// these with it.
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["DEX_LIVE"] == "1"))
 struct WebUILiveTests {
-    static let base = URL(string: "https://webui.teek.dev")!
-    static let tokenFile = "/Users/Prateek/.webui-jwt"
+    static let environment = ProcessInfo.processInfo.environment
+    static let base = URL(string: environment["DEX_LIVE_SERVER"] ?? "https://webui.teek.dev")!
+    let passwordAccount = "tests.webui.live.password"
     let tokenAccount = "tests.webui.live.token"
 
-    /// An auth that uses the token from disk and never signs in.
+    /// An auth for the account the script passed, with no token yet: the
+    /// first request signs in.
     func auth() throws -> WebUIAuth {
-        let jwt = try String(contentsOfFile: Self.tokenFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-        let email = "live@tests"
-        let token = WebUIAuth.Token(value: jwt, expiresAt: nil, owner: Self.base.absoluteString + "|" + email)
-        KeychainService.save(String(decoding: try JSONEncoder().encode(token), as: UTF8.self), for: tokenAccount)
-        return WebUIAuth(baseURL: Self.base, email: email, passwordAccount: "tests.webui.live.none", tokenAccount: tokenAccount)
+        let email = try #require(Self.environment["DEX_LIVE_EMAIL"], "Run through Tools/live-tests.sh")
+        let password = try #require(Self.environment["DEX_LIVE_PASSWORD"], "Run through Tools/live-tests.sh")
+        KeychainService.save(password, for: passwordAccount)
+        KeychainService.save("", for: tokenAccount)
+        return WebUIAuth(baseURL: Self.base, email: email, passwordAccount: passwordAccount, tokenAccount: tokenAccount)
     }
 
     @Test(.timeLimit(.minutes(2)))
     func replyStreamsOverSocketAndIsSaved() async throws {
-        defer { KeychainService.save("", for: tokenAccount) }
+        defer {
+            KeychainService.save("", for: tokenAccount)
+            KeychainService.save("", for: passwordAccount)
+        }
         let auth = try auth()
         let client = WebUIClient(baseURL: Self.base, auth: auth)
         let socket = WebUISocket(baseURL: Self.base, auth: auth)
@@ -98,14 +105,80 @@ struct WebUILiveTests {
         }.value
     }
 
+    /// The whole path: `ChatVM` sends through the real server and socket,
+    /// the reply streams in, is saved, and the chat goes again after.
+    @Test(.timeLimit(.minutes(2)))
+    @MainActor
+    func chatVMRepliesThroughTheServer() async throws {
+        defer {
+            KeychainService.save("", for: tokenAccount)
+            KeychainService.save("", for: passwordAccount)
+        }
+        let auth = try auth()
+        let client = WebUIClient(baseURL: Self.base, auth: auth)
+        let server = WebUIServer(client: client, socket: WebUISocket(baseURL: Self.base, auth: auth))
+        let model = try #require(try await client.defaultModels().first, "Set a default model on the server")
+        let context = ModelContext(Storage.inMemory())
+        let vm = ChatVM()
+        vm.context = context
+        vm.server = server
+        vm.send("Reply with exactly: dex live ok", model: model, webSearch: false)
+        await vm.waitForReply()
+        let chatID = try #require(vm.chat?.id)
+        do {
+            for _ in 0..<240 where vm.isStreaming {
+                try await Task.sleep(for: .milliseconds(250))
+            }
+            #expect(vm.messages.last?.status == .done)
+            #expect(vm.messages.last?.content.localizedCaseInsensitiveContains("dex live ok") == true)
+            #expect(vm.chat?.sortedMessages.last?.status == "done")
+            // The model runs with the window every reply asks for.
+            struct Loaded: Decodable {
+                struct Model: Decodable {
+                    let name: String
+                    let contextLength: Int?
+                    enum CodingKeys: String, CodingKey { case name; case contextLength = "context_length" }
+                }
+                let models: [Model]
+            }
+            var request = URLRequest(url: Self.base.appending(path: "ollama/api/ps"))
+            request.setValue("Bearer \(try await auth.validToken())", forHTTPHeaderField: "Authorization")
+            let loaded = try JSONDecoder().decode(Loaded.self, from: try await URLSession.shared.data(for: request).0)
+            #expect(loaded.models.first { $0.name == model }?.contextLength == WebUIReplyRequest.contextLength)
+        } catch {
+            await Self.remove(chatID: chatID, client: client)
+            throw error
+        }
+        await Self.remove(chatID: chatID, client: client)
+        server.disconnect()
+    }
+
     @Test(.timeLimit(.minutes(1)))
-    func staleTokenIsTurnedAwayBySocket() async throws {
-        let email = "live@tests"
+    func staleTokenIsRenewedBySigningInAgain() async throws {
+        defer {
+            KeychainService.save("", for: tokenAccount)
+            KeychainService.save("", for: passwordAccount)
+        }
+        _ = try auth()
+        let email = try #require(Self.environment["DEX_LIVE_EMAIL"])
+        // A cached token the server turns away, as after it was revoked.
         let token = WebUIAuth.Token(value: "not-a-token", expiresAt: nil, owner: Self.base.absoluteString + "|" + email)
         KeychainService.save(String(decoding: try JSONEncoder().encode(token), as: UTF8.self), for: tokenAccount)
-        defer { KeychainService.save("", for: tokenAccount) }
-        let auth = WebUIAuth(baseURL: Self.base, email: email, passwordAccount: "tests.webui.live.none", tokenAccount: tokenAccount)
-        // Turned away, it renews; with no password that fails as no password.
-        await #expect(throws: WebUIAuth.Failure.noPassword) { try await WebUISocket(baseURL: Self.base, auth: auth).connect() }
+        let auth = WebUIAuth(baseURL: Self.base, email: email, passwordAccount: passwordAccount, tokenAccount: tokenAccount)
+        let socket = WebUISocket(baseURL: Self.base, auth: auth)
+        let (sid, _) = try await socket.connect()
+        #expect(!sid.isEmpty)
+        #expect(try await auth.validToken() != "not-a-token")
+        await socket.disconnect()
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func wrongPasswordSaysWhy() async throws {
+        let email = try #require(Self.environment["DEX_LIVE_EMAIL"])
+        KeychainService.save("definitely-not-the-password", for: passwordAccount)
+        KeychainService.save("", for: tokenAccount)
+        defer { KeychainService.save("", for: passwordAccount) }
+        let auth = WebUIAuth(baseURL: Self.base, email: email, passwordAccount: passwordAccount, tokenAccount: tokenAccount)
+        await #expect(throws: WebUIAuth.Failure.self) { try await auth.validToken() }
     }
 }

@@ -113,7 +113,7 @@ final class Chat {
     var title: String
     var createdAt: Date = Date()
     /// When a message last arrived, as the server counts it: renames, pins
-    /// and moves leave it alone. Sorts Recent.
+    /// and moves leave it alone. Sorts the drawer's Chats.
     var updatedAt: Date = Date()
     /// When the chat was last read; an `updatedAt` after it is unread.
     var lastReadAt: Date?

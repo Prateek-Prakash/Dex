@@ -8,8 +8,6 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @AppStorage("serverUrl") var serverUrl = ""
-
     @EnvironmentObject var serverVM: ServerVM
     @EnvironmentObject var modelsVM: ModelsVM
     @Environment(\.dismiss) private var dismiss
@@ -19,30 +17,25 @@ struct SettingsView: View {
             List {
                 Group {
                     Section {
-                        TextField("Server URL", text: $serverUrl)
+                        TextField("Server URL", text: $serverVM.serverUrl)
                             .keyboardType(.URL)
-                            .autocapitalization(.none)
+                            .textInputAutocapitalization(.never)
                             .disableAutocorrection(true)
-                            .onChange(of: serverUrl) {
-                                serverVM.connect()
-                            }
+                            .onChange(of: serverVM.serverUrl) { serverVM.connect() }
+                        TextField("Email", text: $serverVM.email)
+                            .keyboardType(.emailAddress)
+                            .textContentType(.username)
+                            .textInputAutocapitalization(.never)
+                            .disableAutocorrection(true)
+                            .onChange(of: serverVM.email) { serverVM.connect() }
+                        SecureField("Password", text: $serverVM.password)
+                            .textContentType(.password)
+                            .onChange(of: serverVM.password) { serverVM.savePassword() }
                         LabeledContent("Status", value: serverVM.serverStatus)
                     }
                     Section {
-                        TextField("Access Client ID", text: $serverVM.accessClientID)
-                            .autocapitalization(.none)
-                            .disableAutocorrection(true)
-                            .onChange(of: serverVM.accessClientID) { serverVM.saveAccess() }
-                        SecureField("Access Client Secret", text: $serverVM.accessClientSecret)
-                            .onChange(of: serverVM.accessClientSecret) { serverVM.saveAccess() }
-                    }
-                    Section {
-                        SecureField("Ollama API Key", text: $serverVM.ollamaAPIKey)
-                            .onChange(of: serverVM.ollamaAPIKey) { serverVM.saveAPIKey() }
-                        if !serverVM.ollamaAPIKey.isEmpty {
-                            Toggle("Web Search", isOn: $serverVM.isWebSearchOn)
-                                .toggleStyle(.ink)
-                        }
+                        Toggle("Web Search", isOn: $serverVM.isWebSearchOn)
+                            .toggleStyle(.ink)
                     }
                     // After the connection settings it depends on, and only once
                     // a server answers: with none there's nothing to manage.

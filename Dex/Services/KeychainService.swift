@@ -12,9 +12,6 @@ import Security
 enum KeychainService {
     private static let service = "Teekzilla.Dex"
 
-    static let accessClientID = "ollama.access.id"
-    static let accessClientSecret = "ollama.access.secret"
-    static let ollamaAPIKey = "ollama.com.key"
     /// The Open WebUI account's password, sent only to sign in.
     static let webUIPassword = "webui.password"
     /// The login token, its expiry and whose it is, as JSON.

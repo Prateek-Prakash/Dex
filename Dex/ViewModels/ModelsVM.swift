@@ -8,7 +8,8 @@
 import SwiftUI
 
 /// The models on the server, the one picked for chats, and pulls of new
-/// ones. Owned by `ServerVM`, which hands it each new connection.
+/// ones through the server's Ollama. Owned by `ServerVM`, which hands it
+/// each new connection.
 @MainActor
 final class ModelsVM: ObservableObject {
     @AppStorage("selectedModel") var selectedModel: String = "--"
@@ -26,14 +27,14 @@ final class ModelsVM: ObservableObject {
         models.first { $0.name == name }
     }
 
-    /// The server's connection; nil while its address isn't valid.
-    private var client: OllamaClient?
+    /// The server's connection; nil while it isn't set up.
+    private var client: WebUIClient?
     /// Running pulls by model name. Each belongs to the client it started on.
     private var pullTasks: [String: Task<Void, Never>] = [:]
 
     /// A new server, or none. Pulls on the old one stop; their entries stay
     /// and resume once this one connects.
-    func use(_ client: OllamaClient?) {
+    func use(_ client: WebUIClient?) {
         self.client = client
         pullTasks.values.forEach { $0.cancel() }
         pullTasks = [:]
@@ -45,13 +46,16 @@ final class ModelsVM: ObservableObject {
         await resumePulls()
     }
 
+    /// The models Open WebUI lists, hidden and arena ones left out. With
+    /// none picked, or the picked one gone, the server's default is picked.
     func fetchModels() async {
         guard let client else { return }
         do {
-            models = try await client.models()
+            models = try await client.models().filter(\.isListed).map(Self.model)
             let names = models.map { $0.name }
             if !names.contains(selectedModel) {
-                selectedModel = "--"
+                let defaults = (try? await client.defaultModels()) ?? []
+                selectedModel = defaults.first { names.contains($0) } ?? "--"
             }
         } catch {
             print("Error Fetching Models: \(error.localizedDescription)")
@@ -101,6 +105,13 @@ final class ModelsVM: ObservableObject {
         if pullTasks[name] == task {
             pullTasks[name] = nil
         }
+    }
+
+    /// A server model in the shape the model screens show.
+    nonisolated static func model(_ model: WebUIModel) -> OllamaModel {
+        OllamaModel(name: model.id, size: model.ollama?.size ?? 0, digest: model.ollama?.digest ?? "",
+                    details: model.ollama?.details ?? .init(format: nil, family: nil, parameterSize: nil, quantizationLevel: nil),
+                    capabilities: model.ollama?.capabilities)
     }
 
     /// "PULLING ABC... 25%" from one line of a pull; the percentage only

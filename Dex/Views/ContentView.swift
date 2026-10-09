@@ -95,7 +95,7 @@ struct ContentView: View {
             if !chatVM.messages.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
                     // Empty until the first reply reports its size.
-                    ContextMeter(used: chatVM.contextUsed ?? 0, total: OllamaChatRequest.contextLength)
+                    ContextMeter(used: chatVM.contextUsed ?? 0, total: WebUIReplyRequest.contextLength)
                 }
                 if #available(iOS 26.0, *) {
                     ToolbarSpacer(.fixed, placement: .topBarTrailing)

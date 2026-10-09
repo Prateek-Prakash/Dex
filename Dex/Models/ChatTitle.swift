@@ -7,15 +7,13 @@
 
 import Foundation
 
-/// A saved chat's name: the first message, cut short, until the model names
-/// it after its first reply.
+/// A saved chat's name: the first message, cut short, until the server
+/// names it after its first reply.
 enum ChatTitle {
     /// The longest a fallback title runs before it is cut at a word.
     static let fallbackLength = 40
     /// The most words a model-made title keeps.
     static let maxWords = 4
-    /// How much of the first message and reply the naming request carries.
-    static let excerptLength = 2_000
 
     /// Lowercase inside a title unless they come first.
     static let smallWords: Set<String> = [
@@ -42,20 +40,7 @@ enum ChatTitle {
         return title
     }
 
-    /// The naming request's one message: the first message and its reply.
-    static func prompt(message: String, reply: String) -> String {
-        """
-        Name this conversation in at most four words. Reply with the name only: no quotes, no punctuation, no explanation.
-
-        First message:
-        \(message.prefix(excerptLength))
-
-        Reply:
-        \(reply.prefix(excerptLength))
-        """
-    }
-
-    /// The model's answer cut to `maxWords` and put in Title Case; nil when
+    /// The server's name cut to `maxWords` and put in Title Case; nil when
     /// nothing usable is left.
     static func clean(_ raw: String) -> String? {
         var text = raw

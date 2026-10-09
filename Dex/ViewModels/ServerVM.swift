@@ -7,72 +7,68 @@
 
 import SwiftUI
 
-/// The Ollama server: its address and Cloudflare Access keys, and whether
-/// it answers; and the ollama.com key that lets models search the web. Owns the server's `ModelsVM`, and tells it when the server
-/// changes and when a connection comes up.
+/// The Open WebUI server: its address and the account Dex signs in with,
+/// and whether it answers. Owns the server's `ModelsVM`, and tells it when
+/// the server changes and when a connection comes up.
 @MainActor
 final class ServerVM: ObservableObject {
-    @AppStorage("serverUrl") var serverUrl = ""
-
-    @Published var accessClientID = KeychainService.load(KeychainService.accessClientID)
-    @Published var accessClientSecret = KeychainService.load(KeychainService.accessClientSecret)
-    /// An ollama.com account's API key, for web search and fetch.
-    @Published var ollamaAPIKey = KeychainService.load(KeychainService.ollamaAPIKey)
-    /// Off keeps every model off the web, key or not.
+    @AppStorage("webUIServerURL") var serverUrl = ""
+    @AppStorage("webUIEmail") var email = ""
+    /// Kept in the Keychain; sent only to sign in.
+    @Published var password = KeychainService.load(KeychainService.webUIPassword)
+    /// Off keeps every model off the web.
     @AppStorage("webSearch") var isWebSearchOn = true
 
     @Published private(set) var isReachable: Bool = false
     @Published private(set) var serverStatus: String = "Not Set"
 
-    /// The connection to the server, once its address is valid.
-    private(set) var client: OllamaClient?
+    /// The server replies run on, once its address and account are set.
+    @Published private(set) var server: WebUIServer?
     /// The models on the server, and pulls of new ones.
     let models = ModelsVM()
     private var connectTask: Task<Void, Never>?
 
     init() {
+        Self.removeOllamaSettings()
         connect()
     }
 
-    /// ollama.com, while web search is on and a key is set.
-    var webClient: OllamaClient? {
-        isWebSearchOn ? OllamaClient.web(apiKey: ollamaAPIKey) : nil
-    }
-
-    func saveAPIKey() {
-        KeychainService.save(ollamaAPIKey.trimmingCharacters(in: .whitespacesAndNewlines), for: KeychainService.ollamaAPIKey)
-    }
-
-    func saveAccess() {
-        KeychainService.save(accessClientID.trimmingCharacters(in: .whitespacesAndNewlines), for: KeychainService.accessClientID)
-        KeychainService.save(accessClientSecret.trimmingCharacters(in: .whitespacesAndNewlines), for: KeychainService.accessClientSecret)
+    /// A new password: the token signed in with the old one goes, so the
+    /// next request checks the new one.
+    func savePassword() {
+        KeychainService.save(password, for: KeychainService.webUIPassword)
+        KeychainService.save("", for: KeychainService.webUIToken)
         connect()
     }
 
     func connect() {
         connectTask?.cancel()
-        guard let url = OllamaClient.serverURL(from: serverUrl) else {
-            client = nil
-            models.use(nil)
-            isReachable = false
-            serverStatus = serverUrl.isEmpty ? "Not Set" : "Invalid URL"
+        server?.disconnect()
+        guard let url = WebUIClient.serverURL(from: serverUrl) else {
+            disconnected(serverUrl.isEmpty ? "Not Set" : "Invalid URL")
             return
         }
-        let client = OllamaClient(baseURL: url, headers: OllamaClient.accessHeaders(
-            id: accessClientID.trimmingCharacters(in: .whitespacesAndNewlines),
-            secret: accessClientSecret.trimmingCharacters(in: .whitespacesAndNewlines)))
-        self.client = client
+        let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !email.isEmpty, !password.isEmpty else {
+            disconnected("Sign In Needed")
+            return
+        }
+        let auth = WebUIAuth(baseURL: url, email: email)
+        let client = WebUIClient(baseURL: url, auth: auth)
+        let server = WebUIServer(client: client, socket: WebUISocket(baseURL: url, auth: auth))
+        self.server = server
         models.use(client)
+        isReachable = false
         serverStatus = "Connecting..."
         connectTask = Task {
-            // Typing in the URL field reconnects per keystroke; let it settle.
+            // Typing in a field reconnects per keystroke; let it settle.
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled else { return }
             do {
                 let version = try await client.version()
                 guard !Task.isCancelled else { return }
                 isReachable = true
-                serverStatus = "Ollama \(version)"
+                serverStatus = "Open WebUI \(version)"
                 await models.connected()
             } catch {
                 guard !Task.isCancelled else { return }
@@ -80,5 +76,20 @@ final class ServerVM: ObservableObject {
                 serverStatus = error.localizedDescription
             }
         }
+    }
+
+    private func disconnected(_ status: String) {
+        server = nil
+        models.use(nil)
+        isReachable = false
+        serverStatus = status
+    }
+
+    /// The direct-Ollama settings Dex used before Open WebUI.
+    private static func removeOllamaSettings() {
+        for account in ["ollama.access.id", "ollama.access.secret", "ollama.com.key"] {
+            KeychainService.save("", for: account)
+        }
+        UserDefaults.standard.removeObject(forKey: "serverUrl")
     }
 }

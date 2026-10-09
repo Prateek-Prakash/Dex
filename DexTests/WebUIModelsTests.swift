@@ -45,7 +45,7 @@ enum WebUIFixtures {
     static let models = """
     {"data":[
       {"id":"qwen3.5:9b","name":"qwen3.5:9b","object":"model","created":0,"owned_by":"ollama",
-       "ollama":{"name":"qwen3.5:9b","size":6600000000,"details":{"format":"gguf","family":"qwen3","parameter_size":"9B",
+       "ollama":{"name":"qwen3.5:9b","size":6600000000,"digest":"56671c2ab9384d0e","details":{"format":"gguf","family":"qwen3","parameter_size":"9B",
                  "quantization_level":"Q4_K_M","context_length":131072},"capabilities":["tools","thinking","completion"],
                  "connection_type":"local","urls":[0]},
        "loaded":false,"connection_type":"local","tags":[],"actions":[],"filters":[]},
@@ -101,6 +101,7 @@ struct WebUIModelsTests {
         let models = try JSONDecoder().decode(Response.self, from: Data(WebUIFixtures.models.utf8)).data
         #expect(models.filter(\.isListed).map(\.id) == ["qwen3.5:9b", "dolphin3:8b"])
         #expect(models[0].ollama?.details?.parameterSize == "9B")
+        #expect(ModelsVM.model(models[0]).digest == "56671c2ab9384d0e")
         #expect(models[0].ollama?.capabilities == ["tools", "thinking", "completion"])
         #expect(models[1].isArena)
         #expect(models[2].isHidden)

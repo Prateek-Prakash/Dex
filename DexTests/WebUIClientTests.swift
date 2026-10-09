@@ -9,17 +9,6 @@ import Foundation
 import Testing
 @testable import Dex
 
-extension OllamaStubProtocol {
-    /// A session whose every request `handler` answers.
-    static func session(_ handler: @escaping (URLRequest) -> Reply) -> URLSession {
-        Self.handler = handler
-        Self.requests = []
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [OllamaStubProtocol.self]
-        return URLSession(configuration: configuration)
-    }
-}
-
 extension StubbedNetworkTests {
     @Suite(.serialized)
     final class WebUIClientTests {
@@ -38,7 +27,7 @@ extension StubbedNetworkTests {
         }
 
         /// The sign-ins sent so far.
-        var signIns: [URLRequest] { OllamaStubProtocol.requests.filter { $0.url?.path == "/api/v1/auths/signin" } }
+        var signIns: [URLRequest] { StubProtocol.requests.filter { $0.url?.path == "/api/v1/auths/signin" } }
 
         func auth(session: URLSession, now: Date = Date(timeIntervalSince1970: 1_000_000), email: String = "me@example.com") -> WebUIAuth {
             WebUIAuth(baseURL: Self.base, email: email, passwordAccount: passwordAccount, tokenAccount: tokenAccount,
@@ -46,12 +35,12 @@ extension StubbedNetworkTests {
         }
 
         func client(now: Date = Date(timeIntervalSince1970: 1_000_000),
-                    _ handler: @escaping (URLRequest) -> OllamaStubProtocol.Reply) -> WebUIClient {
-            let session = OllamaStubProtocol.session(handler)
+                    _ handler: @escaping (URLRequest) -> StubProtocol.Reply) -> WebUIClient {
+            let session = StubProtocol.session(handler)
             return WebUIClient(baseURL: Self.base, auth: auth(session: session, now: now), session: session)
         }
 
-        static func signIn(token: String = "jwt1", expiresAt: Int? = 3_000_000) -> OllamaStubProtocol.Reply {
+        static func signIn(token: String = "jwt1", expiresAt: Int? = 3_000_000) -> StubProtocol.Reply {
             .init(body: #"{"id":"u","email":"me@example.com","role":"admin","token":"\#(token)","token_type":"Bearer","expires_at":\#(expiresAt.map(String.init) ?? "null")}"#)
         }
 
@@ -71,12 +60,12 @@ extension StubbedNetworkTests {
             #expect(signIns.count == 1)
             let signIn = try #require(signIns.first)
             #expect(Self.body(signIn) as? [String: String] == ["email": "me@example.com", "password": "secret"])
-            let calls = OllamaStubProtocol.requests.filter { $0.url?.path == "/api/version" }
+            let calls = StubProtocol.requests.filter { $0.url?.path == "/api/version" }
             #expect(calls.map { $0.value(forHTTPHeaderField: "Authorization") } == ["Bearer jwt1", "Bearer jwt1"])
         }
 
         @Test func cachedTokenOutlivesLaunch() async throws {
-            let session = OllamaStubProtocol.session { request in
+            let session = StubProtocol.session { request in
                 request.url?.path == "/api/v1/auths/signin" ? Self.signIn() : .init(body: #"{"version":"1"}"#)
             }
             _ = try await WebUIClient(baseURL: Self.base, auth: auth(session: session), session: session).version()
@@ -92,7 +81,7 @@ extension StubbedNetworkTests {
             // A 30-day token, 12 hours from expiring: inside the one-day margin.
             var now = Date(timeIntervalSince1970: 1_000_000)
             var issued = 0
-            let session = OllamaStubProtocol.session { _ in
+            let session = StubProtocol.session { _ in
                 issued += 1
                 return Self.signIn(token: "jwt\(issued)", expiresAt: Int(now.timeIntervalSince1970) + 30 * 86_400)
             }
@@ -111,7 +100,7 @@ extension StubbedNetworkTests {
             // it is replaced at a quarter of its life instead.
             var now = Date(timeIntervalSince1970: 1_000_000)
             var issued = 0
-            let session = OllamaStubProtocol.session { _ in
+            let session = StubProtocol.session { _ in
                 issued += 1
                 return Self.signIn(token: "jwt\(issued)", expiresAt: Int(now.timeIntervalSince1970) + 3600)
             }
@@ -125,7 +114,7 @@ extension StubbedNetworkTests {
         }
 
         @Test func tokenWithoutExpiryNeverRenews() async throws {
-            let session = OllamaStubProtocol.session { _ in Self.signIn(expiresAt: nil) }
+            let session = StubProtocol.session { _ in Self.signIn(expiresAt: nil) }
             let auth = auth(session: session, now: Date(timeIntervalSince1970: 9_999_999_999))
             _ = try await auth.validToken()
             _ = try await auth.validToken()
@@ -177,11 +166,11 @@ extension StubbedNetworkTests {
             KeychainService.save("", for: passwordAccount)
             let client = client { _ in Self.signIn() }
             await #expect(throws: WebUIAuth.Failure.noPassword) { try await client.version() }
-            #expect(OllamaStubProtocol.requests.isEmpty)
+            #expect(StubProtocol.requests.isEmpty)
         }
 
         @Test func signOutForgetsToken() async throws {
-            let session = OllamaStubProtocol.session { _ in Self.signIn() }
+            let session = StubProtocol.session { _ in Self.signIn() }
             let auth = auth(session: session)
             _ = try await auth.validToken()
             await auth.signOut()
@@ -200,7 +189,7 @@ extension StubbedNetworkTests {
             let chats = try await client.chats()
             #expect(chats.map(\.id) == ["c1"])
             #expect(chats.first?.isUnread == true)
-            let request = try #require(OllamaStubProtocol.requests.last)
+            let request = try #require(StubProtocol.requests.last)
             #expect(request.url?.path == "/api/v1/chats/list")
             #expect(request.url?.query == "include_pinned=true&include_folders=true")
         }
@@ -215,7 +204,7 @@ extension StubbedNetworkTests {
                 }
             }
             #expect(try await client.chats(inFolder: "f1").map(\.id) == ["a", "b"])
-            #expect(OllamaStubProtocol.requests.last?.url?.path == "/api/v1/chats/folder/f1/list")
+            #expect(StubProtocol.requests.last?.url?.path == "/api/v1/chats/folder/f1/list")
         }
 
         @Test func foldersKeepTrailingSlash() async throws {
@@ -224,7 +213,7 @@ extension StubbedNetworkTests {
                 return .init(body: #"[{"id":"f1","name":"Work","meta":null,"parent_id":null,"is_expanded":false,"unread_count":0,"created_at":1,"updated_at":2}]"#)
             }
             #expect(try await client.folders().map(\.name) == ["Work"])
-            #expect(OllamaStubProtocol.requests.last?.url?.absoluteString == "https://webui.example.com/api/v1/folders/")
+            #expect(StubProtocol.requests.last?.url?.absoluteString == "https://webui.example.com/api/v1/folders/")
         }
 
         @Test func chatEditsSendServerShapes() async throws {
@@ -234,14 +223,14 @@ extension StubbedNetworkTests {
                 return .init(body: "true")
             }
             try await client.rename(chat: "c1", to: "New")
-            #expect(Self.body(OllamaStubProtocol.requests.last!) as? [String: [String: String]] == ["chat": ["title": "New"]])
+            #expect(Self.body(StubProtocol.requests.last!) as? [String: [String: String]] == ["chat": ["title": "New"]])
             try await client.move(chat: "c1", toFolder: nil)
-            let move = OllamaStubProtocol.requests.last!
+            let move = StubProtocol.requests.last!
             #expect(move.url?.path == "/api/v1/chats/c1/folder")
             #expect(Self.body(move)["folder_id"] is NSNull)
             #expect(try await client.togglePin(chat: "c1"))
             try await client.delete(chat: "c1")
-            #expect(OllamaStubProtocol.requests.last?.httpMethod == "DELETE")
+            #expect(StubProtocol.requests.last?.httpMethod == "DELETE")
         }
 
         @Test func startReplyReturnsChatID() async throws {
@@ -253,7 +242,7 @@ extension StubbedNetworkTests {
                 model: "m", sessionID: "sid", id: "a1", chatID: nil, parentID: nil,
                 userMessage: .init(id: "u1", parentId: nil, childrenIds: ["a1"], content: "Hi", timestamp: 1, models: ["m"]))
             #expect(try await client.startReply(request) == "c9")
-            #expect(OllamaStubProtocol.requests.last?.url?.path == "/api/chat/completions")
+            #expect(StubProtocol.requests.last?.url?.path == "/api/chat/completions")
         }
 
         @Test func stoppedReplyKeepsItsPlaceInTree() async throws {
@@ -263,7 +252,7 @@ extension StubbedNetworkTests {
                 return .init(body: "{}")
             }
             try await client.save(reply: "a2", chat: "c1", content: "Partial")
-            let post = try #require(OllamaStubProtocol.requests.last)
+            let post = try #require(StubProtocol.requests.last)
             #expect(post.httpMethod == "POST")
             #expect(post.url?.path == "/api/v1/chats/c1")
             let chat = Self.body(post)["chat"] as? [String: Any]
@@ -286,7 +275,7 @@ extension StubbedNetworkTests {
                 request.url?.path == "/api/v1/auths/signin" ? Self.signIn() : .init(body: body)
             }
             #expect(try await client.defaultModels() == expected)
-            #expect(OllamaStubProtocol.requests.last?.url?.path == "/api/config")
+            #expect(StubProtocol.requests.last?.url?.path == "/api/config")
         }
 
         @Test func modelsComeSorted() async throws {
@@ -304,7 +293,7 @@ extension StubbedNetworkTests {
             var statuses: [String] = []
             for try await progress in client.pull(model: "gemma4:2b") { statuses.append(progress.status ?? "") }
             #expect(statuses == ["pulling", "success"])
-            #expect(OllamaStubProtocol.requests.last?.url?.path == "/ollama/api/pull")
+            #expect(StubProtocol.requests.last?.url?.path == "/ollama/api/pull")
         }
 
         @Test func pullThatStopsShortFails() async throws {

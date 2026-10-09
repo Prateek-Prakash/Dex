@@ -30,6 +30,18 @@ struct WebUIClient: Sendable {
         }
     }
 
+    /// The typed address as a server root, or nil when it isn't one.
+    /// A bare host gets https; a port is optional.
+    static func serverURL(from text: String) -> URL? {
+        var text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        if !text.contains("://") { text = "https://" + text }
+        while text.hasSuffix("/") { text.removeLast() }
+        guard let url = URL(string: text), let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http", let host = url.host(), !host.isEmpty else { return nil }
+        return url
+    }
+
     /// The server's "not found", which it sends as a 401 after the token checked out.
     static let notFoundDetail = "We could not find what you're looking for :/"
 
@@ -206,9 +218,10 @@ struct WebUIClient: Sendable {
         _ = try await send("api/tasks/chat/\(id)/stop", method: "POST")
     }
 
-    /// Writes a stopped reply's text into the chat and marks it done. The
-    /// server swaps in a sent message whole, so the stored one is read
-    /// first and sent back with only those two fields changed.
+    /// Writes a stopped reply's text into the chat and marks it done, and
+    /// stopped (Dex's own field; the web UI ignores it). The server swaps in
+    /// a sent message whole, so the stored one is read first and sent back
+    /// with only those fields changed.
     func save(reply id: String, chat chatID: String, content: String) async throws {
         let stored = try JSONSerialization.jsonObject(with: await send("api/v1/chats/\(chatID)")) as? [String: Any]
         let chat = stored?["chat"] as? [String: Any]
@@ -216,6 +229,7 @@ struct WebUIClient: Sendable {
         guard var message = (history?["messages"] as? [String: Any])?[id] as? [String: Any] else { throw Failure.notFound }
         message["content"] = content
         message["done"] = true
+        message[WebUIMessage.stoppedKey] = true
         let body = try JSONSerialization.data(withJSONObject: ["chat": ["history": ["messages": [id: message]]]])
         _ = try await send("api/v1/chats/\(chatID)", method: "POST", data: body)
     }

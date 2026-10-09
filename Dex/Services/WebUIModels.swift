@@ -101,10 +101,21 @@ struct WebUIMessage: Decodable, Sendable, Identifiable {
     let usage: WebUIUsage?
     /// What the reply did, in order: thinking, lookups, their results, text.
     let output: [WebUIOutputItem]?
+    /// Why a reply failed, as the server worded it.
+    let error: String?
+    /// Stopped in Dex, which saved what showed of it.
+    let isStopped: Bool
+
+    /// Dex's mark on a reply it stopped.
+    static let stoppedKey = "dex_stopped"
 
     enum CodingKeys: String, CodingKey {
-        case id, parentId, childrenIds, role, content, done, model, timestamp, usage, output
+        case id, parentId, childrenIds, role, content, done, model, timestamp, usage, output, error
+        case isStopped = "dex_stopped"
     }
+
+    /// `error` is `{"content": "…"}`, or a bare string.
+    private struct ErrorBody: Decodable { let content: String? }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -118,6 +129,12 @@ struct WebUIMessage: Decodable, Sendable, Identifiable {
         timestamp = try container.decodeIfPresent(Int.self, forKey: .timestamp)
         usage = try container.decodeIfPresent(WebUIUsage.self, forKey: .usage)
         output = try container.decodeIfPresent([WebUIOutputItem].self, forKey: .output)
+        isStopped = (try? container.decodeIfPresent(Bool.self, forKey: .isStopped)) ?? false
+        if let body = try? container.decodeIfPresent(ErrorBody.self, forKey: .error) {
+            error = body.content ?? "The reply failed"
+        } else {
+            error = try? container.decodeIfPresent(String.self, forKey: .error)
+        }
     }
 }
 
@@ -192,6 +209,7 @@ struct WebUIModel: Decodable, Sendable, Identifiable, Equatable {
 
     struct Ollama: Decodable, Sendable, Equatable {
         let size: Int?
+        let digest: String?
         let details: OllamaModel.Details?
         let capabilities: [String]?
     }
@@ -272,9 +290,15 @@ struct WebUIReplyRequest: Encodable, Sendable {
     var messages: [[String: String]]?
     var features = Features()
     var backgroundTasks: BackgroundTasks?
+    /// The model's settings for this reply: the context window, the same
+    /// every time, since a different one makes Ollama reload the model.
+    var params = ["num_ctx": WebUIReplyRequest.contextLength]
+
+    /// The context window every reply asks for, in tokens.
+    static let contextLength = 65_536
 
     enum CodingKeys: String, CodingKey {
-        case model, stream, id, messages, features
+        case model, stream, id, messages, features, params
         case sessionID = "session_id"
         case chatID = "chat_id"
         case parentID = "parent_id"
@@ -295,6 +319,7 @@ struct WebUIReplyRequest: Encodable, Sendable {
         try container.encodeIfPresent(messages, forKey: .messages)
         try container.encode(features, forKey: .features)
         try container.encodeIfPresent(backgroundTasks, forKey: .backgroundTasks)
+        try container.encode(params, forKey: .params)
     }
 
     /// Temporary chats live only in the socket stream and are never saved.

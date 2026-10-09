@@ -141,7 +141,11 @@ struct DrawerView: View {
             .listRowSeparator(.hidden)
             .listRowInsets(rowInsets)
             .listRowBackground(Color.clear)
-        ForEach(items) { item in
+        // Rows keyed by section too: a chat pinned leaves Chats and arrives in
+        // Pinned as two rows, not one id in two places at once, which List
+        // draws late (a blank moment) while it sorts out the move.
+        ForEach(items.map { SectionRow(section: header, item: $0) }, id: \.key) { entry in
+            let item = entry.item
             if item.kind == .folder, let folder = folders.first(where: { $0.id == item.id }) {
                 // Follows the page, so a rename or a delete anywhere can't
                 // leave it stale.
@@ -220,4 +224,12 @@ struct DrawerView: View {
 #Preview {
     DrawerView()
         .modelContainer(Storage.inMemory())
+}
+
+/// A drawer row keyed by its section as well as its item.
+private struct SectionRow {
+    let section: String
+    let item: DrawerItem
+
+    var key: String { section + "/" + item.id }
 }

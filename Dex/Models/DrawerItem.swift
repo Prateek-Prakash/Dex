@@ -58,9 +58,11 @@ struct DrawerItem: Identifiable, Hashable {
 
     /// The pinned section's title; its rows drag to reorder.
     static let pinnedTitle = "Pinned"
+    /// The section of every chat not pinned, latest first.
+    static let chatsTitle = "Chats"
 
     /// The drawer's sections in order, leaving out any with no items.
     static func sections(pinned: [DrawerItem], recent: [DrawerItem]) -> [(title: String, items: [DrawerItem])] {
-        [(pinnedTitle, pinned), ("Recent", recent)].filter { !$0.items.isEmpty }
+        [(pinnedTitle, pinned), (chatsTitle, recent)].filter { !$0.items.isEmpty }
     }
 }

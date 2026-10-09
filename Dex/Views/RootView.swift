@@ -26,6 +26,7 @@ struct RootView: View {
     /// Owned here so the chat survives switching pages.
     @StateObject private var chatVM = ChatVM()
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @State var page: Page = .chat
     /// Pages pushed over `page`, reached from another page rather than the
     /// drawer: they have the back button, and the edge swipe is Back. A
@@ -156,8 +157,17 @@ struct RootView: View {
             .simultaneousGesture(drag(width: width))
         }
         .sensoryFeedback(.impact(weight: .light), trigger: isDrawerOpen)
-        // Before anything can be sent: the chat saves into this store.
-        .onAppear { chatVM.context = modelContext }
+        // Before anything can be sent: the chat saves into this store, and
+        // replies run on this server.
+        .onAppear {
+            chatVM.context = modelContext
+            chatVM.server = serverVM.server
+        }
+        .onReceive(serverVM.$server) { chatVM.server = $0 }
+        // Back from the background: the live connection dropped while away.
+        .onChange(of: scenePhase) {
+            if scenePhase == .active { chatVM.resume() }
+        }
         // A cancelled drag: `onEnded` never ran, so settle where it was.
         .onChange(of: isGestureActive) {
             if !isGestureActive, isDragging != nil {

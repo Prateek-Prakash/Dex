@@ -22,8 +22,8 @@ struct DrawerItemTests {
     @Test func sectionsWithNoItemsAreLeftOut() {
         #expect(DrawerItem.sections(pinned: [], recent: []).isEmpty)
         #expect(DrawerItem.sections(pinned: [folder], recent: []).map(\.title) == ["Pinned"])
-        #expect(DrawerItem.sections(pinned: [], recent: [chat]).map(\.title) == ["Recent"])
-        #expect(DrawerItem.sections(pinned: [folder], recent: [chat]).map(\.title) == ["Pinned", "Recent"])
+        #expect(DrawerItem.sections(pinned: [], recent: [chat]).map(\.title) == ["Chats"])
+        #expect(DrawerItem.sections(pinned: [folder], recent: [chat]).map(\.title) == ["Pinned", "Chats"])
     }
 }
 
