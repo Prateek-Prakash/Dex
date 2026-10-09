@@ -274,6 +274,8 @@ extension StubbedNetworkTests {
             let chat = try #require(try Self.chats(context).first)
             #expect(chat.folder === lab)
             #expect(vm.newChatFolder === trip)
+            // In the folder on the server too.
+            #expect(server.state.folderOps == ["move c1 \(lab.id)"])
         }
 
         @Test func pinFollowsWhatWasAsked() async throws {
@@ -291,7 +293,7 @@ extension StubbedNetworkTests {
             #expect(pins() == 3)
         }
 
-        @Test func deletingAFolderDeletesItsChatsOnTheServer() async throws {
+        @Test func deletingAFolderDeletesItOnTheServer() async throws {
             let (vm, server, context) = Self.vm()
             let lab = Folder(name: "Lab")
             context.insert(lab)
@@ -300,7 +302,8 @@ extension StubbedNetworkTests {
             try Self.answer("Hello", vm, server)
             vm.delete(lab)
             try await Task.sleep(for: .milliseconds(200))
-            #expect(StubProtocol.requests.contains { $0.httpMethod == "DELETE" && $0.url?.path == "/api/v1/chats/c1" })
+            // One request: the server deletes the folder's chats with it.
+            #expect(server.state.folderOps.last == "delete \(lab.id)")
         }
 
         @Test func renamePinAndDeleteReachTheServer() async throws {
@@ -318,6 +321,20 @@ extension StubbedNetworkTests {
             #expect(sent.contains("POST /api/v1/chats/c1/pin"))
             #expect(sent.contains("DELETE /api/v1/chats/c1"))
             #expect(server.state.saves.contains { ($0["chat"] as? [String: Any])?["title"] as? String == "Trip" })
+        }
+
+        @Test func replyStoppedInTheWebUIStopsHere() async throws {
+            let (vm, server, _) = Self.vm()
+            await Self.send("Hi", vm)
+            let id = try #require(vm.messages.last?.id)
+            server.send(.text(chatID: "c1", messageID: id, delta: "Hel"))
+            server.send(.cancelled(chatID: "c1", messageID: id))
+            #expect(vm.messages.last?.status == .stopped)
+            #expect(vm.messages.last?.content == "Hel")
+            #expect(vm.canRetry)
+            // Not stopped again from here.
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(server.state.stops.isEmpty)
         }
 
         @Test func droppedChannelReadsTheReplyFromTheServer() async throws {
@@ -411,17 +428,6 @@ extension StubbedNetworkTests {
             try await Task.sleep(for: .milliseconds(200))
             #expect(chat.title == "Renamed On Web")
             #expect(chat.messages.isEmpty)
-        }
-
-        @Test func deletedOnTheServerLeavesTheCacheAsIs() async throws {
-            let (vm, _, context) = Self.vm()
-            let chat = Chat(id: "gone", title: "Kept")
-            context.insert(chat)
-            try context.save()
-            vm.open(chat)
-            try await Task.sleep(for: .milliseconds(200))
-            // The drawer's refresh (stage 4) takes it out; opening alone doesn't.
-            #expect(vm.chat?.id == "gone")
         }
 
         @Test func serverTitleNamesTheChatUnlessRenamed() async throws {

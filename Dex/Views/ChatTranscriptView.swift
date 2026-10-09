@@ -314,11 +314,8 @@ private struct UserBubble: View {
                 // spacing: a bubble's top and bottom, between the m and l steps by design
                 .padding(.vertical, 10.0)
                 .background(Color.surfaceRaised, in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
-                .contextMenu {
-                    Button("Copy") {
-                        UIPasteboard.general.string = text
-                    }
-                }
+                // Selected and copied like any text; menu actions come later.
+                .textSelection(.enabled)
         }
     }
 }
@@ -346,11 +343,6 @@ private struct ReplyView: View {
                 ChatMarkdownView(text: message.content)
                     .equatable()
                     .textSelection(.enabled)
-                    .contextMenu {
-                        Button("Copy") {
-                            UIPasteboard.general.string = message.content
-                        }
-                    }
             } else if message.status == .streaming && message.thinking == nil {
                 WaitingDots()
             }

@@ -10,7 +10,8 @@ import UIKit
 
 /// A switch in ink: the stock thumb is always white, so on an ink track it
 /// vanishes in dark mode. On, the track is ink and the thumb the base
-/// color; off, the track is gray. Stock size, and stock to VoiceOver.
+/// color; off, the track is gray. Stock size, and stock to VoiceOver; its
+/// row is as tall as a row of text.
 struct InkToggleStyle: ToggleStyle {
     /// The system switch's size on this iOS: 51×31 up to iOS 18, 61×28 from
     /// iOS 26. Measured, so a row is exactly as tall as one with a stock switch.
@@ -20,6 +21,10 @@ struct InkToggleStyle: ToggleStyle {
         HStack {
             configuration.label
             Spacer()
+        }
+        // Over the row, not in it: the switch is taller than a line of text,
+        // and would make its row taller than the plain rows around it.
+        .overlay(alignment: .trailing) {
             Capsule()
                 .fill(configuration.isOn ? Color.ink : Color.track)
                 .frame(width: Self.trackSize.width, height: Self.trackSize.height)

@@ -124,7 +124,7 @@ struct ContentView: View {
             } else if let chat = chatVM.chat {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        ItemActions(isPinned: chat.pinnedAt != nil, pin: { chatVM.togglePin(chat) },
+                        ItemActions(isPinned: chat.isPinned, pin: { chatVM.togglePin(chat) },
                                     rename: { chatToRename = chat }, organize: { chatToOrganize = chat },
                                     delete: { chatToDelete = chat })
                     } label: {

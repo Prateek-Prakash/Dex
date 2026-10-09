@@ -153,6 +153,30 @@ struct WebUILiveTests {
         server.disconnect()
     }
 
+    /// The drawer's refresh reads the real server's lists into a throwaway
+    /// store; nothing is written to the server.
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func listRefreshReadsTheRealServer() async throws {
+        defer {
+            KeychainService.save("", for: tokenAccount)
+            KeychainService.save("", for: passwordAccount)
+        }
+        let auth = try auth()
+        let client = WebUIClient(baseURL: Self.base, auth: auth)
+        let server = WebUIServer(client: client, socket: WebUISocket(baseURL: Self.base, auth: auth))
+        let snapshot = try await ServerSnapshot.fetch(client)
+        let context = ModelContext(Storage.inMemory())
+        let vm = ChatVM()
+        vm.context = context
+        vm.server = server
+        await vm.refreshList()
+        let chats = try context.fetch(FetchDescriptor<Chat>())
+        #expect(Set(chats.map(\.id)) == Set(snapshot.chats.filter { $0.archived != true }.map(\.id)))
+        #expect(try context.fetch(FetchDescriptor<Folder>()).count == snapshot.folders.count)
+        server.disconnect()
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func staleTokenIsRenewedBySigningInAgain() async throws {
         defer {

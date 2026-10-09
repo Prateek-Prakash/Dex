@@ -37,8 +37,7 @@ struct FoldersView: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
-                    ItemActions(isPinned: folder.pinnedAt != nil, pin: { chatVM.togglePin(folder) },
-                                rename: { folderToRename = folder }, delete: { folderToDelete = folder })
+                    ItemActions(rename: { folderToRename = folder }, delete: { folderToDelete = folder })
                 }
                 .tileRowInList()
             }

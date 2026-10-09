@@ -98,6 +98,11 @@ struct WebUISocketTests {
         #expect(event("chat:tags", #"["General"]"#) == .tags(chatID: "c1", tags: ["General"]))
         #expect(event("chat:active", #"{"active":false,"folder_id":null}"#) == .active(chatID: "c1", isActive: false))
         #expect(event("chat:list", #"{"chat_id":"c1","folder_id":null}"#) == .listChanged(chatID: "c1"))
+        #expect(event("chat:list", #"{"chat_id":"c1","last_read_at":1791569211}"#)
+                == .read(chatID: "c1", at: Date(timeIntervalSince1970: 1_791_569_211)))
+        #expect(event("chat:tasks:cancel", "null") == .cancelled(chatID: "c1", messageID: "a1"))
+        #expect(event("chat:message:error", #"{"error":{"content":"Model not found"},"done":true}"#)
+                == .failed(chatID: "c1", messageID: "a1", message: "Model not found"))
         #expect(event("source", #"{"source":{"name":"x"}}"#) == nil)
         #expect(WebUIEvent.decode(Data("not json".utf8)) == nil)
     }

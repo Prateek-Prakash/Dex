@@ -20,6 +20,10 @@ enum WebUIEvent: Equatable, Sendable {
     /// The reply is done; `output` is the whole of it.
     case finished(chatID: String, messageID: String, output: [WebUIOutputItem], usage: WebUIUsage?)
     case failed(chatID: String, messageID: String, message: String)
+    /// The reply was stopped, from here or another client.
+    case cancelled(chatID: String, messageID: String)
+    /// The chat was marked read, here or by another client.
+    case read(chatID: String, at: Date)
     case title(chatID: String, title: String)
     case tags(chatID: String, tags: [String])
     /// A reply started or stopped running in the chat.
@@ -63,7 +67,15 @@ enum WebUIEvent: Equatable, Sendable {
         case "chat:active":
             return inner.data?.decode(Active.self).map { .active(chatID: chatID, isActive: $0.active) }
         case "chat:list":
+            if let read = inner.data?.decode(Read.self), let lastReadAt = read.lastReadAt {
+                return .read(chatID: read.chatID ?? chatID, at: Date(timeIntervalSince1970: lastReadAt))
+            }
             return .listChanged(chatID: envelope.chatID)
+        case "chat:tasks:cancel":
+            return .cancelled(chatID: chatID, messageID: messageID)
+        case "chat:message:error":
+            let error = inner.data?.decode(Completion.self)?.error
+            return .failed(chatID: chatID, messageID: messageID, message: error?.content ?? "The reply failed")
         default:
             return nil
         }
@@ -105,6 +117,15 @@ enum WebUIEvent: Equatable, Sendable {
     }
 
     private struct Active: Decodable { let active: Bool }
+
+    private struct Read: Decodable {
+        let chatID: String?
+        let lastReadAt: Double?
+        enum CodingKeys: String, CodingKey {
+            case chatID = "chat_id"
+            case lastReadAt = "last_read_at"
+        }
+    }
 
     /// Any JSON, kept as bytes until its type is known.
     private struct RawJSON: Decodable {

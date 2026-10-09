@@ -16,13 +16,14 @@ struct WebUIChatSummary: Decodable, Sendable, Identifiable, Equatable {
     let lastReadAt: Int?
     /// A reply is running on the server.
     var active: Bool?
+    var archived: Bool?
 
     /// Changed since it was last read, and no reply still running: the
     /// server's own unread rule.
     var isUnread: Bool { updatedAt > (lastReadAt ?? 0) && active != true }
 
     enum CodingKeys: String, CodingKey {
-        case id, title, active
+        case id, title, active, archived
         case updatedAt = "updated_at"
         case createdAt = "created_at"
         case lastReadAt = "last_read_at"

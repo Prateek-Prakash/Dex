@@ -44,19 +44,18 @@ struct DrawerItem: Identifiable, Hashable {
         self.init(id: folder.id, title: folder.name, kind: .folder)
     }
 
-    /// Pinned folders and chats together, the latest pinned first.
-    static func pinned(folders: [Folder], chats: [Chat]) -> [DrawerItem] {
-        let rows = folders.compactMap { folder in folder.pinnedAt.map { ($0, DrawerItem(folder)) } }
-            + chats.compactMap { chat in chat.pinnedAt.map { ($0, DrawerItem(chat)) } }
-        return rows.sorted { $0.0 > $1.0 }.map(\.1)
+    /// The pinned chats, in the order given (latest message first), as the
+    /// web UI lists them.
+    static func pinned(_ chats: [Chat]) -> [DrawerItem] {
+        chats.filter(\.isPinned).map(DrawerItem.init)
     }
 
     /// The chats not pinned, in the order given (latest message first).
     static func recent(_ chats: [Chat]) -> [DrawerItem] {
-        chats.filter { $0.pinnedAt == nil }.map(DrawerItem.init)
+        chats.filter { !$0.isPinned }.map(DrawerItem.init)
     }
 
-    /// The pinned section's title; its rows drag to reorder.
+    /// The pinned section's title.
     static let pinnedTitle = "Pinned"
     /// The section of every chat not pinned, latest first.
     static let chatsTitle = "Chats"

@@ -195,83 +195,50 @@ extension StubbedNetworkTests {
     }
 }
 
-/// Folders: creating one, unique names, the Folders page's order.
+/// Folders: the names a new or renamed one may have, the Folders page's
+/// order. Making and renaming them on the server is in `ListSyncTests`.
 @MainActor
 struct FolderTests {
-    private static func folders(_ context: ModelContext) throws -> [Folder] {
-        try context.fetch(FetchDescriptor<Folder>(sortBy: Folder.newestFirst))
-    }
-
-    @Test func createTrimsTheName() throws {
+    @Test func newNamesAreTrimmedAndUnique() throws {
         let context = ModelContext(Storage.inMemory())
-        guard case .created(let folder) = Folder.create(named: "  Home Lab \n", in: context) else {
-            Issue.record("not created"); return
-        }
-        #expect(folder.name == "Home Lab")
-        #expect(try Self.folders(context).map(\.name) == ["Home Lab"])
-    }
-
-    @Test func blankNameSavesNothing() throws {
-        let context = ModelContext(Storage.inMemory())
-        guard case .blank = Folder.create(named: "   ", in: context) else {
+        #expect(Folder.check("  Home Lab \n", in: context) == nil)
+        guard case .blank = Folder.check("   ", in: context) else {
             Issue.record("not blank"); return
         }
-        #expect(try Self.folders(context).isEmpty)
-    }
-
-    @Test func takenNameIgnoringCaseAndSpacesSavesNothing() throws {
-        let context = ModelContext(Storage.inMemory())
-        _ = Folder.create(named: "Home Lab", in: context)
-        guard case .taken(let name) = Folder.create(named: " home LAB ", in: context) else {
+        context.insert(Folder(name: "Home Lab"))
+        guard case .taken(let name) = Folder.check(" home LAB ", in: context) else {
             Issue.record("not refused"); return
         }
         #expect(name == "home LAB")
-        #expect(try Self.folders(context).count == 1)
-        // A different name is fine.
-        guard case .created = Folder.create(named: "Home Lab 2", in: context) else {
-            Issue.record("not created"); return
+        #expect(Folder.check("Home Lab 2", in: context) == nil)
+    }
+
+    @Test func renamesFollowTheUniqueRule() throws {
+        let context = ModelContext(Storage.inMemory())
+        let lab = Folder(name: "Home Lab")
+        context.insert(lab)
+        context.insert(Folder(name: "Recipes"))
+        guard case .taken(let name) = Folder.check(renaming: lab, to: " recipes ", in: context) else {
+            Issue.record("not refused"); return
         }
-        #expect(try Self.folders(context).count == 2)
+        #expect(name == "recipes")
+        guard case .unchanged = Folder.check(renaming: lab, to: "   ", in: context),
+              case .unchanged = Folder.check(renaming: lab, to: "Home Lab", in: context) else {
+            Issue.record("changed"); return
+        }
+        // Only the case changing is fine: the folder it matches is itself.
+        #expect(Folder.check(renaming: lab, to: "home lab", in: context) == nil)
+        #expect(Folder.check(renaming: lab, to: "  Servers ", in: context) == nil)
     }
 
     @Test func foldersListNewestFirst() throws {
         let context = ModelContext(Storage.inMemory())
-        _ = Folder.create(named: "Old", in: context)
-        guard case .created(let newer) = Folder.create(named: "New", in: context) else {
-            Issue.record("not created"); return
-        }
+        context.insert(Folder(name: "Old"))
+        let newer = Folder(name: "New")
         newer.createdAt = Date().addingTimeInterval(60)
-        #expect(try Self.folders(context).map(\.name) == ["New", "Old"])
-    }
-}
-
-/// Renaming and deleting folders.
-@MainActor
-struct FolderActionTests {
-    @Test func renameFollowsTheUniqueRule() throws {
-        let context = ModelContext(Storage.inMemory())
-        guard case .created(let lab) = Folder.create(named: "Home Lab", in: context),
-              case .created = Folder.create(named: "Recipes", in: context) else {
-            Issue.record("not created"); return
-        }
-        guard case .taken(let name) = Folder.rename(lab, to: " recipes ", in: context) else {
-            Issue.record("not refused"); return
-        }
-        #expect(name == "recipes")
-        #expect(lab.name == "Home Lab")
-        guard case .unchanged = Folder.rename(lab, to: "   ", in: context),
-              case .unchanged = Folder.rename(lab, to: "Home Lab", in: context) else {
-            Issue.record("changed"); return
-        }
-        // Only the case changing is fine: the folder it matches is itself.
-        guard case .renamed = Folder.rename(lab, to: "home lab", in: context) else {
-            Issue.record("not renamed"); return
-        }
-        #expect(lab.name == "home lab")
-        guard case .renamed = Folder.rename(lab, to: "  Servers ", in: context) else {
-            Issue.record("not renamed"); return
-        }
-        #expect(lab.name == "Servers")
+        context.insert(newer)
+        let folders = try context.fetch(FetchDescriptor<Folder>(sortBy: Folder.newestFirst))
+        #expect(folders.map(\.name) == ["New", "Old"])
     }
 
     @Test func chatCountLine() {
@@ -282,9 +249,8 @@ struct FolderActionTests {
 
     @Test func deletingAFolderDeletesItsChatsAndClearsTheScreen() throws {
         let context = ModelContext(Storage.inMemory())
-        guard case .created(let folder) = Folder.create(named: "Lab", in: context) else {
-            Issue.record("not created"); return
-        }
+        let folder = Folder(name: "Lab")
+        context.insert(folder)
         let inside = Chat(title: "Inside")
         let outside = Chat(title: "Outside")
         context.insert(inside)
@@ -302,80 +268,20 @@ struct FolderActionTests {
     }
 }
 
-/// Pinning: the toggle, and the drawer's Pinned and Recent sections.
+/// Pinning a chat; the drawer's sections are in `CacheApplyTests`.
 @MainActor
 struct PinTests {
-    @Test func togglePinSetsAndClearsPinnedAt() throws {
+    @Test func togglePinFlipsIt() throws {
         let context = ModelContext(Storage.inMemory())
         let chat = Chat(title: "Notes")
-        let folder = Folder(name: "Lab")
         context.insert(chat)
-        context.insert(folder)
         let vm = ChatVM()
         vm.context = context
-
         vm.togglePin(chat)
-        vm.togglePin(folder)
-        #expect(chat.pinnedAt != nil)
-        #expect(folder.pinnedAt != nil)
+        #expect(chat.isPinned)
         #expect(!context.hasChanges)
         vm.togglePin(chat)
-        vm.togglePin(folder)
-        #expect(chat.pinnedAt == nil)
-        #expect(folder.pinnedAt == nil)
-    }
-
-    @Test func pinnedMixesFoldersAndChatsLatestFirst() {
-        let now = Date()
-        let lab = Folder(name: "Lab")
-        lab.pinnedAt = now.addingTimeInterval(-60)
-        let recipes = Folder(name: "Recipes")
-        let notes = Chat(title: "Notes")
-        notes.pinnedAt = now
-        let trip = Chat(title: "Trip")
-        trip.pinnedAt = now.addingTimeInterval(-120)
-        let loose = Chat(title: "Loose")
-
-        let pinned = DrawerItem.pinned(folders: [lab, recipes], chats: [trip, loose, notes])
-        #expect(pinned.map(\.title) == ["Notes", "Lab", "Trip"])
-        #expect(pinned.map(\.kind) == [.chat, .folder, .chat])
-        #expect(pinned[1].id == lab.id)
-    }
-
-    @Test func reorderedPinsKeepTheDraggedOrder() throws {
-        let context = ModelContext(Storage.inMemory())
-        let lab = Folder(name: "Lab")
-        let notes = Chat(title: "Notes")
-        let trip = Chat(title: "Trip")
-        context.insert(lab)
-        context.insert(notes)
-        context.insert(trip)
-        let vm = ChatVM()
-        vm.context = context
-        [lab].forEach(vm.togglePin)
-        [notes, trip].forEach(vm.togglePin)
-
-        // Trip dragged to the top, Lab to the bottom.
-        let dragged = [DrawerItem(trip), DrawerItem(notes), DrawerItem(lab)]
-        let now = Date()
-        vm.reorderPinned(dragged, now: now)
-        #expect(DrawerItem.pinned(folders: [lab], chats: [notes, trip]).map(\.title) == ["Trip", "Notes", "Lab"])
-        #expect(trip.pinnedAt == now)
-        #expect(!context.hasChanges)
-
-        // A new pin lands on top.
-        let loose = Chat(title: "Loose")
-        context.insert(loose)
-        vm.togglePin(loose)
-        #expect(DrawerItem.pinned(folders: [lab], chats: [notes, trip, loose]).first?.title == "Loose")
-    }
-
-    @Test func recentLeavesOutPinnedChatsKeepingOrder() {
-        let first = Chat(title: "First")
-        let pinned = Chat(title: "Pinned")
-        pinned.pinnedAt = Date()
-        let last = Chat(title: "Last")
-        #expect(DrawerItem.recent([first, pinned, last]).map(\.title) == ["First", "Last"])
+        #expect(!chat.isPinned)
     }
 }
 

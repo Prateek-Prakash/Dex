@@ -64,7 +64,7 @@ struct FolderView: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
-                    ItemActions(isPinned: chat.pinnedAt != nil, pin: { chatVM.togglePin(chat) },
+                    ItemActions(isPinned: chat.isPinned, pin: { chatVM.togglePin(chat) },
                                 rename: { chatToRename = chat }, organize: { chatToOrganize = chat },
                                 delete: { chatToDelete = chat })
                 }
@@ -74,8 +74,7 @@ struct FolderView: View {
             .scrollContentBackground(.hidden)
         } actions: {
             if let folder {
-                ItemActions(isPinned: folder.pinnedAt != nil, pin: { chatVM.togglePin(folder) },
-                            rename: { folderToRename = folder }, delete: { folderToDelete = folder })
+                ItemActions(rename: { folderToRename = folder }, delete: { folderToDelete = folder })
             }
         }
         .folderActionAlerts(renaming: $folderToRename, deleting: $folderToDelete) { folder in

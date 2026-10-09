@@ -7,27 +7,31 @@
 
 import SwiftUI
 
-/// Pin or Unpin; Rename and, for a chat, Organize; Delete: with their
-/// icons, a divider between each group. A saved chat's long-press and ⋯
-/// menus, and a folder's. Pin shows the Light pin; Unpin, on a pinned
-/// item, the Bold.
+/// For a chat, Pin or Unpin; Rename and, for a chat, Organize; Delete:
+/// with their icons, a divider between each group. A saved chat's
+/// long-press and ⋯ menus, and a folder's (folders can't be pinned: Open
+/// WebUI has no pinned folders). Pin shows the Light pin; Unpin, on a
+/// pinned chat, the Bold.
 struct ItemActions: View {
-    let isPinned: Bool
-    let pin: () -> Void
+    var isPinned = false
+    /// Pins or unpins a chat; nil for a folder.
+    var pin: (() -> Void)?
     let rename: () -> Void
     /// Moves a chat into or out of a folder; nil for a folder.
     var organize: (() -> Void)?
     let delete: () -> Void
 
     var body: some View {
-        Button(action: pin) {
-            Label {
-                Text(isPinned ? "Unpin" : "Pin")
-            } icon: {
-                (isPinned ? Iconly.pinBold : Iconly.pin).image(.menu)
+        if let pin {
+            Button(action: pin) {
+                Label {
+                    Text(isPinned ? "Unpin" : "Pin")
+                } icon: {
+                    (isPinned ? Iconly.pinBold : Iconly.pin).image(.menu)
+                }
             }
+            Divider()
         }
-        Divider()
         Button(action: rename) {
             Label { Text("Rename") } icon: { Iconly.edit.image(.menu) }
         }
@@ -121,10 +125,12 @@ private struct FolderActionAlerts: ViewModifier {
     @Binding var deleting: Folder?
     let delete: (Folder) -> Void
 
-    @Environment(\.modelContext) private var context
+    @EnvironmentObject private var chatVM: ChatVM
     @State private var newName = ""
     /// The folder whose new name was just refused as taken, and that name.
     @State private var refused: (folder: Folder, name: String)?
+    /// Why the server couldn't rename it.
+    @State private var failure: String?
     /// Set when Rename comes back after a refusal: keeps the typed name.
     @State private var keepsTypedName = false
 
@@ -159,6 +165,14 @@ private struct FolderActionAlerts: ViewModifier {
             } message: { refused in
                 Text(refused.name)
             }
+            .alert("Couldn't Rename Folder", isPresented: Binding(
+                get: { failure != nil },
+                set: { if !$0 { failure = nil } }
+            ), presenting: failure) { _ in
+                Button("OK") {}
+            } message: { failure in
+                Text(failure)
+            }
             .alert("Delete Folder", isPresented: present($deleting), presenting: deleting) { folder in
                 Button("Delete", role: .destructive) { delete(folder) }
                 Button("Cancel", role: .cancel) {}
@@ -167,9 +181,15 @@ private struct FolderActionAlerts: ViewModifier {
             }
     }
 
+    /// Renamed on the server first, then here.
     private func rename(_ folder: Folder) {
-        if case .taken(let taken) = Folder.rename(folder, to: newName, in: context) {
-            refused = (folder, taken)
+        let name = newName
+        Task {
+            switch await chatVM.rename(folder, to: name) {
+            case .taken(let taken): refused = (folder, taken)
+            case .failed(let reason): failure = reason
+            case .renamed, .unchanged: break
+            }
         }
     }
 
@@ -191,10 +211,12 @@ private struct FolderCreationAlert: ViewModifier {
     @Binding var isPresented: Bool
     let created: (Folder) -> Void
 
-    @Environment(\.modelContext) private var context
+    @EnvironmentObject private var chatVM: ChatVM
     @State private var name = ""
     /// The name just refused as taken.
     @State private var takenName: String?
+    /// Why the server couldn't make it.
+    @State private var failure: String?
     /// Set when Create comes back after a refusal: keeps the typed name.
     @State private var keepsTypedName = false
 
@@ -226,16 +248,29 @@ private struct FolderCreationAlert: ViewModifier {
             } message: { taken in
                 Text(taken)
             }
+            .alert("Couldn't Create Folder", isPresented: Binding(
+                get: { failure != nil },
+                set: { if !$0 { failure = nil } }
+            ), presenting: failure) { _ in
+                Button("OK") {}
+            } message: { failure in
+                Text(failure)
+            }
     }
 
+    /// Made on the server first, so it has the server's id from the start.
     private func create() {
-        switch Folder.create(named: name, in: context) {
-        case .created(let folder):
-            created(folder)
-        case .taken(let taken):
-            takenName = taken
-        case .blank:
-            break
+        Task {
+            switch await chatVM.createFolder(named: name) {
+            case .created(let folder):
+                created(folder)
+            case .taken(let taken):
+                takenName = taken
+            case .failed(let reason):
+                failure = reason
+            case .blank:
+                break
+            }
         }
     }
 }

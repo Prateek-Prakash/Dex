@@ -12,8 +12,8 @@ import SwiftData
 // server holds, keyed by the server's ids, so Dex opens fast and reads
 // offline.
 
-/// A folder of chats. The server decides what deleting one takes with it;
-/// the cache only lets go of its chats.
+/// A folder of chats, as the server has it. Deleting one on the server
+/// deletes its chats too; the cache only lets go of them.
 @Model
 final class Folder {
     /// The server's id.
@@ -21,9 +21,6 @@ final class Folder {
     var name: String
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
-    /// Nil when unpinned; also orders the pinned section. Open WebUI has no
-    /// pinned folders, so this lives in the folder's `meta` on the server.
-    var pinnedAt: Date?
     @Relationship(deleteRule: .nullify, inverse: \Chat.folder)
     var chats: [Chat] = []
 
@@ -41,25 +38,17 @@ final class Folder {
         case blank
         /// Another folder has this name, trimmed, ignoring case; nothing saved.
         case taken(String)
+        /// The server couldn't make it; nothing saved. Its reason.
+        case failed(String)
     }
 
-    /// Saves a new folder named `name`, trimmed. Names are unique, ignoring
-    /// case.
-    static func create(named name: String, in context: ModelContext) -> Creation {
+    /// Why `name`, trimmed, can't name a new folder: blank, or another
+    /// folder has it, ignoring case. Nil when it can.
+    static func check(_ name: String, in context: ModelContext) -> Creation? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return .blank }
         let existing = (try? context.fetch(FetchDescriptor<Folder>())) ?? []
-        if existing.contains(where: { isSame($0.name, name) }) {
-            return .taken(name)
-        }
-        let folder = Folder(name: name)
-        context.insert(folder)
-        do {
-            try context.save()
-        } catch {
-            print("Error Saving Folder: \(error.localizedDescription)")
-        }
-        return .created(folder)
+        return existing.contains(where: { isSame($0.name, name) }) ? .taken(name) : nil
     }
 
     enum Renaming {
@@ -68,25 +57,18 @@ final class Folder {
         case unchanged
         /// Another folder has this name; nothing changed.
         case taken(String)
+        /// The server couldn't rename it; nothing changed. Its reason.
+        case failed(String)
     }
 
-    /// Renames to `name`, trimmed, under the same rule as creating: no other
-    /// folder may have it, ignoring case. Changing only the case is fine.
-    static func rename(_ folder: Folder, to name: String, in context: ModelContext) -> Renaming {
+    /// Why `folder` can't be renamed to `name`, trimmed, under the same
+    /// rule as creating: no other folder may have it, ignoring case.
+    /// Changing only the case is fine. Nil when it can.
+    static func check(renaming folder: Folder, to name: String, in context: ModelContext) -> Renaming? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name != folder.name else { return .unchanged }
         let others = ((try? context.fetch(FetchDescriptor<Folder>())) ?? []).filter { $0 !== folder }
-        if others.contains(where: { isSame($0.name, name) }) {
-            return .taken(name)
-        }
-        folder.name = name
-        folder.updatedAt = .now
-        do {
-            try context.save()
-        } catch {
-            print("Error Saving Folder: \(error.localizedDescription)")
-        }
-        return .renamed
+        return others.contains(where: { isSame($0.name, name) }) ? .taken(name) : nil
     }
 
     /// The Delete Folder dialog's count line.
@@ -115,14 +97,15 @@ final class Chat {
     /// When a message last arrived, as the server counts it: renames, pins
     /// and moves leave it alone. Sorts the drawer's Chats.
     var updatedAt: Date = Date()
+    /// Pinned on the server.
+    var isPinned: Bool = false
     /// When the chat was last read; an `updatedAt` after it is unread.
     var lastReadAt: Date?
+    /// A reply is running on the server, as its chat list last said.
+    var isActive: Bool = false
     /// The server's `updatedAt` when `messages` were last fetched; a newer
     /// one means they are out of date. Nil: never fetched (a title only).
     var messagesSyncedAt: Date?
-    /// Nil when unpinned; also orders the pinned section. Whether a chat is
-    /// pinned comes from the server; the order is this device's.
-    var pinnedAt: Date?
     /// The model of the latest reply.
     var model: String = ""
     /// Nil for a chat on its own.
@@ -135,9 +118,10 @@ final class Chat {
         self.title = title
     }
 
-    /// Changed since it was last read.
+    /// Changed since it was last read, and no reply still running: the
+    /// server's own unread rule.
     var isUnread: Bool {
-        updatedAt > (lastReadAt ?? .distantPast)
+        updatedAt > (lastReadAt ?? .distantPast) && !isActive
     }
 
     /// The chats in the folder with id `folderID`.

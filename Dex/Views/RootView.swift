@@ -85,13 +85,13 @@ struct RootView: View {
                     renameChat: { chatVM.rename($0, to: $1) },
                     deleteChat: { chatVM.delete($0) },
                     pinChat: { chatVM.togglePin($0) },
-                    pinFolder: { chatVM.togglePin($0) },
                     moveChat: { chatVM.move($0, to: $1) },
-                    deleteFolder: { deleteFolder($0) },
-                    reorderPinned: { chatVM.reorderPinned($0) },
+                    refresh: { await chatVM.refreshList() },
                     openSettings: { showSettingsView = true },
                     newSession: { newSession() }
                 )
+                // Its sheets and dialogs (Organize, Create Folder) need it.
+                .environmentObject(chatVM)
 
                 // One stack for every page: drawer picks replace its root,
                 // everything else pushes onto it.
@@ -104,19 +104,19 @@ struct RootView: View {
                             FoldersView(openDrawer: { setDrawer(open: true) }, push: { push($0) })
                         case .folder(let id):
                             FolderView(id: id, openDrawer: { setDrawer(open: true) },
-                                       push: { push($0) }, leave: { show(.folders) })
+                                       push: { push($0) }, leave: { resetToNewSession() })
                         }
                     }
                     .navigationDestination(for: Route.self) { route in
                         switch route {
                         case .folder(let id):
                             FolderView(id: id, isPushed: true, push: { push($0) },
-                                       leave: { routes.removeAll { $0 == route } })
+                                       leave: { resetToNewSession() })
                         case .chat:
-                            PushedChatView(id: route.id, push: { push($0) }, leave: { routes.removeAll { $0 == route } })
+                            PushedChatView(id: route.id, push: { push($0) }, leave: { resetToNewSession() })
                         case .newChat(let folderID):
                             PushedNewChatView(folderID: folderID, push: { push($0) },
-                                              leave: { routes.removeAll { $0 == route } })
+                                              leave: { resetToNewSession() })
                         }
                     }
                 }
@@ -163,10 +163,30 @@ struct RootView: View {
             chatVM.context = modelContext
             chatVM.server = serverVM.server
         }
-        .onReceive(serverVM.$server) { chatVM.server = $0 }
-        // Back from the background: the live connection dropped while away.
+        // A new server or account: its chats replace the cache's.
+        .onReceive(serverVM.$server) { server in
+            chatVM.server = server
+            Task { await chatVM.refreshList() }
+        }
+        // Back from the background: the live connection dropped while away,
+        // and chats may have changed.
         .onChange(of: scenePhase) {
             if scenePhase == .active { chatVM.resume() }
+        }
+        // Something on the stack deleted elsewhere: start over.
+        .onChange(of: chatVM.listVersion) {
+            if stackHasDeletedPage() { resetToNewSession() }
+        }
+        // Opening the drawer shows the server's chats as they are now.
+        .onChange(of: isDrawerOpen) {
+            if isDrawerOpen { Task { await chatVM.refreshList() } }
+        }
+        // While Dex is in front, on any screen: what the socket doesn't say
+        // (renames, pins, deletes, folders) shows within 15 s. iOS runs no
+        // timers in the background; coming back refreshes at once.
+        .task(id: scenePhase == .active) {
+            guard scenePhase == .active else { return }
+            await chatVM.refreshWhileVisible()
         }
         // A cancelled drag: `onEnded` never ran, so settle where it was.
         .onChange(of: isGestureActive) {
@@ -288,16 +308,44 @@ struct RootView: View {
 
     /// Deletes a folder from the drawer. On screen, its page gives way to
     /// Folders, the drawer staying open.
-    private func deleteFolder(_ folder: Folder) {
-        if page == .folder(folder.id) { page = .folders }
-        chatVM.delete(folder)
-    }
-
     /// An empty chat on the main screen, from the drawer. A folder page's
     /// New Session pushes one instead (`Route.newChat`).
     private func newSession() {
         chatVM.reset()
         show(.chat)
+    }
+
+    /// A page on the stack, or the chat under it, was deleted elsewhere:
+    /// everything clears to a new chat. The drawer stays as it is.
+    private func resetToNewSession() {
+        chatVM.reset()
+        isHoldingChatUnderRoutes = false
+        chatUnderRoutes = nil
+        routes.removeAll()
+        page = .chat
+    }
+
+    /// Whether any page shown or stacked was deleted: the drawer's folder
+    /// page, a pushed chat or folder, or the chat held under them.
+    private func stackHasDeletedPage() -> Bool {
+        let held = chatUnderRoutes
+        return Self.hasDeletedPage(
+            page: page, routes: routes,
+            heldChatGone: isHoldingChatUnderRoutes && (held.map { $0.isDeleted || $0.modelContext == nil } ?? false),
+            folderExists: { id in ((try? modelContext.fetchCount(FetchDescriptor<Folder>(predicate: #Predicate { $0.id == id }))) ?? 0) > 0 },
+            chatExists: { id in ((try? modelContext.fetchCount(FetchDescriptor<Chat>(predicate: #Predicate { $0.id == id }))) ?? 0) > 0 })
+    }
+
+    nonisolated static func hasDeletedPage(page: Page, routes: [Route], heldChatGone: Bool,
+                                           folderExists: (String) -> Bool, chatExists: (String) -> Bool) -> Bool {
+        if case .folder(let id) = page, !folderExists(id) { return true }
+        if heldChatGone { return true }
+        return routes.contains { route in
+            switch route {
+            case .folder(let id), .newChat(let id): !folderExists(id)
+            case .chat(let id): !chatExists(id)
+            }
+        }
     }
 
     private func setDrawer(open: Bool) {

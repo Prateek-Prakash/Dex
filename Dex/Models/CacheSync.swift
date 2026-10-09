@@ -86,7 +86,92 @@ enum CacheSync {
         // title stands until then.
         if remote.title != CacheSync.unnamedTitle, chat.title != remote.title { chat.title = remote.title }
         chat.createdAt = Date(timeIntervalSince1970: TimeInterval(remote.createdAt))
-        if remote.pinned == true, chat.pinnedAt == nil { chat.pinnedAt = .now }
-        if remote.pinned == false, chat.pinnedAt != nil { chat.pinnedAt = nil }
+        if let pinned = remote.pinned, chat.isPinned != pinned { chat.isPinned = pinned }
+    }
+}
+
+/// Everything the drawer shows, as the server has it.
+struct ServerSnapshot: Sendable {
+    var chats: [WebUIChatSummary]
+    var pinned: Set<String>
+    var folders: [WebUIFolder]
+    /// Which folder each foldered chat is in.
+    var folderOf: [String: String]
+
+    /// The chat list, the pins, the folders, and each folder's chats.
+    static func fetch(_ client: WebUIClient) async throws -> ServerSnapshot {
+        async let chats = client.chats()
+        async let pinned = client.pinnedChats()
+        async let folders = client.folders()
+        let list = try await folders
+        let folderOf = try await withThrowingTaskGroup(of: (String, [WebUIChatSummary]).self) { group in
+            for folder in list {
+                group.addTask { (folder.id, try await client.chats(inFolder: folder.id)) }
+            }
+            var folderOf: [String: String] = [:]
+            for try await (folderID, chats) in group {
+                for chat in chats { folderOf[chat.id] = folderID }
+            }
+            return folderOf
+        }
+        return ServerSnapshot(chats: try await chats, pinned: Set(try await pinned.map(\.id)), folders: list, folderOf: folderOf)
+    }
+}
+
+extension CacheSync {
+    /// Makes the cache's folders and chats match `snapshot`: new ones added,
+    /// changed ones updated, ones gone from the server removed. Left alone:
+    /// chats in `keep`, open or replying here (a new one may not be listed
+    /// yet).
+    @MainActor
+    static func apply(_ snapshot: ServerSnapshot, to context: ModelContext, keep: Set<String>) {
+        let localFolders = (try? context.fetch(FetchDescriptor<Folder>())) ?? []
+        var folders = Dictionary(localFolders.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let remoteFolderIDs = Set(snapshot.folders.map(\.id))
+        for remote in snapshot.folders {
+            let folder = folders[remote.id] ?? {
+                let folder = Folder(id: remote.id, name: remote.name)
+                context.insert(folder)
+                folders[remote.id] = folder
+                return folder
+            }()
+            if folder.name != remote.name { folder.name = remote.name }
+            folder.createdAt = Date(timeIntervalSince1970: TimeInterval(remote.createdAt))
+            folder.updatedAt = Date(timeIntervalSince1970: TimeInterval(remote.updatedAt))
+        }
+        for folder in localFolders where !remoteFolderIDs.contains(folder.id) {
+            context.delete(folder)
+            folders[folder.id] = nil
+        }
+
+        let localChats = (try? context.fetch(FetchDescriptor<Chat>())) ?? []
+        var chats = Dictionary(localChats.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let remoteChats = snapshot.chats.filter { $0.archived != true }
+        let remoteChatIDs = Set(remoteChats.map(\.id))
+        for remote in remoteChats {
+            let chat = chats[remote.id] ?? {
+                let chat = Chat(id: remote.id, title: remote.title)
+                context.insert(chat)
+                chats[remote.id] = chat
+                return chat
+            }()
+            if remote.title != unnamedTitle, chat.title != remote.title { chat.title = remote.title }
+            chat.createdAt = Date(timeIntervalSince1970: TimeInterval(remote.createdAt))
+            let updatedAt = Date(timeIntervalSince1970: TimeInterval(remote.updatedAt))
+            // A reply finishing here may have saved a newer time than the list's.
+            if updatedAt > chat.updatedAt { chat.updatedAt = updatedAt }
+            if let lastReadAt = remote.lastReadAt.map({ Date(timeIntervalSince1970: TimeInterval($0)) }),
+               lastReadAt > (chat.lastReadAt ?? .distantPast) {
+                chat.lastReadAt = lastReadAt
+            }
+            if chat.isActive != (remote.active == true) { chat.isActive = remote.active == true }
+            let isPinned = snapshot.pinned.contains(remote.id)
+            if chat.isPinned != isPinned { chat.isPinned = isPinned }
+            let folder = snapshot.folderOf[remote.id].flatMap { folders[$0] }
+            if chat.folder !== folder { chat.folder = folder }
+        }
+        for chat in localChats where !remoteChatIDs.contains(chat.id) && !keep.contains(chat.id) {
+            context.delete(chat)
+        }
     }
 }

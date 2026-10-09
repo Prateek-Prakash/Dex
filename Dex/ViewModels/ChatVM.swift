@@ -84,7 +84,16 @@ final class ChatVM: ObservableObject {
     var server: ReplyServer? {
         didSet {
             server?.onEvent = { [weak self] event in self?.handle(event) }
+            listen()
         }
+    }
+
+    /// Opens the live channel now, not at the first reply: it also says when
+    /// a reply starts or stops in any chat, the web UI's included, which
+    /// the drawer shows at once.
+    func listen() {
+        guard let server else { return }
+        Task { _ = try? await server.sessionID() }
     }
 
     /// The chat on screen; nil for a new chat before its first message.
@@ -215,7 +224,10 @@ final class ChatVM: ObservableObject {
     func move(_ chat: Chat, to folder: Folder?) {
         guard chat.folder !== folder else { return }
         chat.folder = folder
+        localChanges += 1
         commit()
+        let (id, folderID) = (chat.id, folder?.id)
+        onServer { try await $0.move(chat: id, toFolder: folderID) }
     }
 
     /// Puts a saved chat on screen; one still replying picks up live. The
@@ -271,6 +283,7 @@ final class ChatVM: ObservableObject {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, title != chat.title else { return }
         chat.title = title
+        localChanges += 1
         commit()
         onServer { try await $0.rename(chat: chat.id, to: title) }
     }
@@ -282,6 +295,7 @@ final class ChatVM: ObservableObject {
         drop { $0.chat === chat }
         let id = chat.id
         context?.delete(chat)
+        localChanges += 1
         commit()
         onServer { try await $0.delete(chat: id) }
     }
@@ -292,48 +306,25 @@ final class ChatVM: ObservableObject {
         if let chat, chat.folder === folder { reset() }
         drop { $0.chat?.folder === folder }
         // As the server does: a folder's chats go with it.
-        let ids = folder.chats.map(\.id)
+        let folderID = folder.id
         for chat in folder.chats { context?.delete(chat) }
         context?.delete(folder)
+        localChanges += 1
         commit()
-        // Folders reach the server in stage 4; their chats already do.
-        for id in ids { onServer { try await $0.delete(chat: id) } }
+        onServer { try await $0.delete(folder: folderID) }
     }
 
     /// Pins a saved chat, or unpins a pinned one.
     func togglePin(_ chat: Chat) {
-        chat.pinnedAt = chat.pinnedAt == nil ? .now : nil
+        chat.isPinned.toggle()
+        localChanges += 1
         commit()
         let id = chat.id
-        let pinned = chat.pinnedAt != nil
+        let pinned = chat.isPinned
         // The server only flips; flip again if it was already as asked.
         onServer { client in
             if try await client.togglePin(chat: id) != pinned { _ = try await client.togglePin(chat: id) }
         }
-    }
-
-    /// Pins a folder, or unpins a pinned one.
-    func togglePin(_ folder: Folder) {
-        folder.pinnedAt = folder.pinnedAt == nil ? .now : nil
-        commit()
-    }
-
-    /// Saves the pinned rows' order, top first, as their pin times: the top
-    /// row the latest, each next a second earlier, so a new pin still
-    /// lands on top.
-    func reorderPinned(_ items: [DrawerItem], now: Date = .now) {
-        guard let context else { return }
-        let folders = (try? context.fetch(FetchDescriptor<Folder>())) ?? []
-        let chats = (try? context.fetch(FetchDescriptor<Chat>())) ?? []
-        for (index, item) in items.enumerated() {
-            let pinnedAt = now.addingTimeInterval(-Double(index))
-            if item.kind == .folder {
-                folders.first { $0.id == item.id }?.pinnedAt = pinnedAt
-            } else {
-                chats.first { $0.id == item.id }?.pinnedAt = pinnedAt
-            }
-        }
-        commit()
     }
 
     /// Back on screen after the app was away: replies whose live channel
@@ -344,6 +335,189 @@ final class ChatVM: ObservableObject {
             if session.task == nil { follow(session) }
         }
         if let current { sync(current) }
+        listen()
+        Task { await refreshList() }
+    }
+
+    // MARK: Lists
+
+    /// Fetches what the drawer shows from the server and makes the cache
+    /// match: every chat (with its unread and running state), pins, and
+    /// folders. Folders changed here go first. One at a time; one asked for
+    /// meanwhile runs right after.
+    func refreshList() async {
+        if let refreshTask {
+            refreshAgain = true
+            return await refreshTask.value
+        }
+        let task = Task { await runRefresh() }
+        refreshTask = task
+        await task.value
+        refreshTask = nil
+        if refreshAgain {
+            refreshAgain = false
+            await refreshList()
+        }
+    }
+
+    /// Fetches the list every `interval` until cancelled: while Dex is in
+    /// front, so a rename, pin, delete or folder change from the web UI
+    /// shows (the socket doesn't carry those).
+    func refreshWhileVisible(every interval: Duration = .seconds(15)) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: interval)
+            guard !Task.isCancelled else { return }
+            await refreshList()
+        }
+    }
+
+    /// Counts refreshes applied to the cache, so the screen can check whether
+    /// a page it shows was deleted.
+    @Published private(set) var listVersion = 0
+
+    /// How often the list is fetched while a reply runs, for its spinner.
+    var listPollInterval: Duration = .seconds(5)
+    private var refreshTask: Task<Void, Never>?
+    private var refreshAgain = false
+    private var listPoll: Task<Void, Never>?
+    private var isPushingFolders = false
+    private var saveObserver: NSObjectProtocol?
+
+    private func runRefresh() async {
+        guard let server, let context else { return }
+        guard await uploadLocalFolders(server.client, context: context) else { return }
+        // A change sent a moment ago may not be on the server yet.
+        for _ in 0..<100 where pendingWrites > 0 {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        let changes = localChanges
+        let snapshot: ServerSnapshot
+        do {
+            snapshot = try await ServerSnapshot.fetch(server.client)
+        } catch {
+            print("Error Refreshing Chats: \(error.localizedDescription)")
+            // A reply still running here keeps its spinner fresh: try again.
+            let chats = (try? context.fetch(FetchDescriptor<Chat>())) ?? []
+            return pollWhileRunning(chats.contains(where: \.isActive))
+        }
+        guard server === self.server else { return }
+        // Changed here while the list was on its way: it may not show the
+        // change yet, so it's fetched again rather than undoing it.
+        guard changes == localChanges else {
+            refreshAgain = true
+            return
+        }
+        // A chat is saved only once the server has it, so only one still
+        // replying here is kept if the list leaves it out.
+        let keep = Set(([current] + background).compactMap { $0 }.filter(\.isReplying).compactMap { $0.chat?.id })
+        CacheSync.apply(snapshot, to: context, keep: keep)
+        commit()
+        // The chat on screen was deleted elsewhere: a new chat replaces it.
+        if let chat = current?.chat, chat.isDeleted || chat.modelContext == nil { reset() }
+        listVersion += 1
+        // The chat on screen: read, and up to date if the server has more.
+        if let session = current, let chat = session.chat {
+            if chat.isUnread { markRead(session) }
+            if !session.isReplying, chat.updatedAt > (chat.messagesSyncedAt ?? .distantPast) { sync(session) }
+        }
+        pollWhileRunning(snapshot.chats.contains { $0.active == true })
+    }
+
+    /// While a reply runs anywhere, fetches the list again shortly, so its
+    /// spinner turns into an unread dot when it finishes.
+    private func pollWhileRunning(_ isRunning: Bool) {
+        guard isRunning else {
+            listPoll?.cancel()
+            listPoll = nil
+            return
+        }
+        guard listPoll == nil else { return }
+        let interval = listPollInterval
+        listPoll = Task { [weak self] in
+            try? await Task.sleep(for: interval)
+            guard !Task.isCancelled, let self else { return }
+            self.listPoll = nil
+            // Away from the screen there's nothing to show; `resume` refreshes.
+            guard UIApplication.shared.applicationState != .background else { return }
+            await self.refreshList()
+        }
+    }
+
+    /// Counts changes made here, so a refresh that overlaps one can tell.
+    private var localChanges = 0
+
+    /// Creates a folder named `name`, trimmed, on the server, then here
+    /// with the server's id.
+    func createFolder(named name: String) async -> Folder.Creation {
+        guard let context else { return .blank }
+        if let refusal = Folder.check(name, in: context) { return refusal }
+        guard let client = server?.client else { return .failed("No server is set. Add one in Settings.") }
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            let remote = try await client.createFolder(named: name)
+            let remoteID = remote.id
+            let existing = try? context.fetch(FetchDescriptor<Folder>(predicate: #Predicate { $0.id == remoteID })).first
+            let folder = existing ?? Folder(id: remote.id, name: remote.name)
+            if existing == nil { context.insert(folder) }
+            localChanges += 1
+            commit()
+            return .created(folder)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    /// Renames a folder on the server, then here.
+    func rename(_ folder: Folder, to name: String) async -> Folder.Renaming {
+        guard let context else { return .unchanged }
+        if let refusal = Folder.check(renaming: folder, to: name, in: context) { return refusal }
+        guard let client = server?.client else { return .failed("No server is set. Add one in Settings.") }
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            try await client.rename(folder: folder.id, to: name)
+            folder.name = name
+            localChanges += 1
+            commit()
+            return .renamed
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    /// Folders this phone made before Dex synced folders, which the server
+    /// never had: made there once, with their chats, so a refresh doesn't
+    /// drop them.
+    /// False while some couldn't be made: the refresh then waits, so it
+    /// doesn't drop them. One whose name the server already has joins it.
+    private func uploadLocalFolders(_ client: WebUIClient, context: ModelContext) async -> Bool {
+        let key = "foldersUploaded"
+        guard !UserDefaults.standard.bool(forKey: key) else { return true }
+        let local = (try? context.fetch(FetchDescriptor<Folder>())) ?? []
+        guard !local.isEmpty else {
+            UserDefaults.standard.set(true, forKey: key)
+            return true
+        }
+        do {
+            let remote = try await client.folders()
+            let remoteIDs = Set(remote.map(\.id))
+            for folder in local where !remoteIDs.contains(folder.id) {
+                var target = remote.first(where: { Folder.isSame($0.name, folder.name) })?.id
+                if target == nil { target = try await client.createFolder(named: folder.name).id }
+                guard let target else { continue }
+                for chat in folder.chats {
+                    do {
+                        try await client.move(chat: chat.id, toFolder: target)
+                    } catch WebUIClient.Failure.notFound {
+                        // Gone from the server: nothing to move; the refresh drops it.
+                    }
+                }
+            }
+            UserDefaults.standard.set(true, forKey: key)
+            return true
+        } catch {
+            print("Error Uploading Folders: \(error.localizedDescription)")
+            return false
+        }
     }
 
     /// Waits for every reply under way, on screen or not. For tests.
@@ -413,6 +587,11 @@ final class ChatVM: ObservableObject {
             session.isStarting = false
             session.task = nil
             session.unsent.subtract([questionID, id])
+            // Started from a folder's page: into the folder on the server
+            // too, before a refresh can see it outside.
+            if isNew, !session.isIncognito, let folder = session.folder, !folder.isDeleted {
+                try? await server.client.move(chat: chatID, toFolder: folder.id)
+            }
             // Kept even if the reply ended meanwhile (it finished fast, or was
             // stopped): the chat exists on the server now.
             if !session.isIncognito {
@@ -495,18 +674,56 @@ final class ChatVM: ObservableObject {
                 session.isLive = false
                 if session.task == nil { follow(session) }
             }
-        case .tags, .active, .listChanged:
+        case .listChanged:
+            Task { await refreshList() }
+        case .active(let chatID, let isActive):
+            activity(chatID, isActive)
+        case .cancelled(_, let messageID):
+            // Stopped elsewhere: the server keeps nothing more of it.
+            guard let session = replying(messageID) else { return }
+            finish(messageID, in: session, status: .stopped)
+        case .read(let chatID, let at):
+            // Read in the web UI: the dot goes here too.
+            if let chat = cachedChat(chatID), at > (chat.lastReadAt ?? .distantPast) {
+                chat.lastReadAt = at
+                commit()
+            }
+        case .tags:
             break
         }
     }
 
-    /// The server named a saved chat. A rename made meanwhile wins.
+    /// The server named a saved chat. A rename made meanwhile wins: only a
+    /// first-line title, or the server's "New Chat" (one started in the web
+    /// UI), gives way.
     private func name(_ chatID: String, _ title: String) {
         let title = ChatTitle.clean(title) ?? title
-        guard let context, let chat = try? context.fetch(FetchDescriptor<Chat>(predicate: #Predicate { $0.id == chatID })).first,
-              let first = chat.sortedMessages.first, chat.title == ChatTitle.fallback(first.content) else { return }
+        guard let chat = cachedChat(chatID) else { return }
+        let fallback = chat.sortedMessages.first.map { ChatTitle.fallback($0.content) }
+        guard chat.title == fallback || chat.title == CacheSync.unnamedTitle else { return }
         chat.title = title
         commit()
+    }
+
+    /// A reply started or stopped in a chat, here or in the web UI. Started:
+    /// its spinner shows at once. Stopped: the list is fetched, for the
+    /// chat's new time (its unread dot) and title, or the chat itself if
+    /// it's new to Dex.
+    private func activity(_ chatID: String, _ isActive: Bool) {
+        // An incognito chat's temporary id: nothing to show or fetch.
+        guard !chatID.hasPrefix(WebUIReplyRequest.temporaryChatID(sessionID: "")) else { return }
+        if let chat = cachedChat(chatID), chat.isActive != isActive {
+            chat.isActive = isActive
+            commit()
+        }
+        if !isActive || cachedChat(chatID) == nil {
+            Task { await refreshList() }
+        }
+    }
+
+    private func cachedChat(_ id: String) -> Chat? {
+        guard let context else { return nil }
+        return try? context.fetch(FetchDescriptor<Chat>(predicate: #Predicate { $0.id == id })).first
     }
 
     /// Reads a reply that isn't on the live channel from the saved chat
@@ -565,7 +782,15 @@ final class ChatVM: ObservableObject {
         guard let server, let chat = session.chat, let context else { return }
         let chatID = chat.id
         Task {
-            guard let remote = try? await server.client.chat(id: chatID) else { return }
+            let remote: WebUIChat
+            do {
+                remote = try await server.client.chat(id: chatID)
+            } catch WebUIClient.Failure.notFound {
+                // Deleted elsewhere since the list was fetched.
+                return gone(chat, in: session)
+            } catch {
+                return
+            }
             guard !chat.isDeleted, chat.modelContext != nil else { return }
             // Renamed or pinned elsewhere: the messages stand, the details change.
             CacheSync.storeDetails(remote, into: chat)
@@ -585,6 +810,18 @@ final class ChatVM: ObservableObject {
             if session === current { markRead(session) }
             publish(session)
         }
+    }
+
+    /// A chat the server no longer has: out of the cache, and off the screen
+    /// for a new chat. A reply still running here is let go.
+    private func gone(_ chat: Chat, in session: ChatSession) {
+        guard !chat.isDeleted, chat.modelContext != nil else { return }
+        if session === current { reset() }
+        session.task?.cancel()
+        drop { $0 === session }
+        context?.delete(chat)
+        commit()
+        listVersion += 1
     }
 
     private static func apply(_ parts: ReplyParts, to message: inout ChatMessage) {
@@ -701,6 +938,7 @@ final class ChatVM: ObservableObject {
             }
             if newChatFolder === session.folder { newChatFolder = nil }
             session.chat = chat
+            localChanges += 1
             return chat
         }()
         // Gone from the store: saved anew.
@@ -735,14 +973,21 @@ final class ChatVM: ObservableObject {
     /// a failure is only logged, and the next refresh shows the server's.
     private func onServer(_ change: @escaping (WebUIClient) async throws -> Void) {
         guard let client = server?.client else { return }
+        pendingWrites += 1
         Task {
             do {
                 try await change(client)
             } catch {
                 print("Error Updating Server: \(error.localizedDescription)")
             }
+            pendingWrites -= 1
+            // A refresh that read the server before this landed fetches again.
+            localChanges += 1
         }
     }
+
+    /// Changes sent to the server and not yet answered.
+    private var pendingWrites = 0
 
     private func commit() {
         do {

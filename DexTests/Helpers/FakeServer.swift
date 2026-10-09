@@ -23,11 +23,23 @@ final class FakeServer: ReplyServer {
         private var _stops: [String] = []
         private var _saves: [[String: Any]] = []
         private var nextChat = 0
+        private var nextFolder = 0
+        private var _list = "[]"
+        private var _pinned = "[]"
+        private var _folders = "[]"
+        private var _folderChats: [String: String] = [:]
+        private var _folderOps: [String] = []
+        private var _listFetches = 0
+        private var _missingChats: Set<String> = []
         /// The status a reply request gets; anything but 200 refuses it.
         var replyStatus = 200
         /// Runs on the main actor while a reply request is out, before it's
         /// answered: for what happens meanwhile.
         var duringReply: (@MainActor () -> Void)?
+        /// Folder creation fails, as for a name the server already has.
+        var refusesFolders = false
+        /// The same, while the chat list is being fetched.
+        var duringList: (@MainActor () -> Void)?
 
         func locked<T>(_ body: () -> T) -> T {
             lock.lock()
@@ -39,6 +51,18 @@ final class FakeServer: ReplyServer {
         var replies: [[String: Any]] { locked { _replies } }
         var stops: [String] { locked { _stops } }
         var saves: [[String: Any]] { locked { _saves } }
+
+        /// The chat list, pinned list and folder list, as JSON arrays.
+        func setList(_ json: String) { locked { _list = json } }
+        func setPinned(_ json: String) { locked { _pinned = json } }
+        func setFolders(_ json: String) { locked { _folders = json } }
+        /// A folder's chats, as a JSON array (all on page 1).
+        func setFolderChats(_ id: String, _ json: String) { locked { _folderChats[id] = json } }
+        /// Folder requests made, e.g. "create Lab", "update f1 {…}", "delete f1".
+        var folderOps: [String] { locked { _folderOps } }
+        var listFetches: Int { locked { _listFetches } }
+        /// Chats the server says it can't find when moved.
+        func setMissing(_ ids: Set<String>) { locked { _missingChats = ids } }
 
         /// What `GET /api/v1/chats/{id}` answers; nil is "not found".
         func setChat(_ id: String, _ json: String?) { locked { _chats[id] = json } }
@@ -74,6 +98,43 @@ final class FakeServer: ReplyServer {
                 case ("POST", let path) where path.hasPrefix("/api/tasks/chat/") && path.hasSuffix("/stop"):
                     _stops.append(String(path.dropFirst("/api/tasks/chat/".count).dropLast("/stop".count)))
                     return .init(body: #"{"status":true}"#)
+                case ("GET", "/api/v1/chats/list"):
+                    _listFetches += 1
+                    if let duringList {
+                        lock.unlock()
+                        DispatchQueue.main.sync { MainActor.assumeIsolated { duringList() } }
+                        lock.lock()
+                    }
+                    return .init(body: _list)
+                case ("GET", "/api/v1/chats/pinned"):
+                    return .init(body: _pinned)
+                case ("GET", let path) where path.hasPrefix("/api/v1/chats/folder/"):
+                    let id = path.dropFirst("/api/v1/chats/folder/".count).split(separator: "/").first.map(String.init) ?? ""
+                    let page = request.url?.query ?? ""
+                    return .init(body: page == "page=1" ? (_folderChats[id] ?? "[]") : "[]")
+                case ("GET", "/api/v1/folders/"), ("GET", "/api/v1/folders"):
+                    return .init(body: _folders)
+                case ("POST", "/api/v1/folders/"), ("POST", "/api/v1/folders"):
+                    if refusesFolders { return .init(status: 400, body: #"{"detail":"Folder already exists"}"#) }
+                    nextFolder += 1
+                    let name = body["name"] as? String ?? ""
+                    _folderOps.append("create \(name)")
+                    return .init(body: #"{"id":"f\#(nextFolder)","name":"\#(name)","parent_id":null,"created_at":1,"updated_at":1}"#)
+                case ("POST", let path) where path.hasPrefix("/api/v1/folders/") && path.hasSuffix("/update"):
+                    let id = path.dropFirst("/api/v1/folders/".count).dropLast("/update".count)
+                    let data = (try? JSONSerialization.data(withJSONObject: body, options: .sortedKeys)) ?? Data()
+                    _folderOps.append("update \(id) \(String(decoding: data, as: UTF8.self))")
+                    return .init(body: "{}")
+                case ("DELETE", let path) where path.hasPrefix("/api/v1/folders/"):
+                    _folderOps.append("delete \(path.dropFirst("/api/v1/folders/".count))")
+                    return .init(body: "true")
+                case ("POST", let path) where path.hasPrefix("/api/v1/chats/") && path.hasSuffix("/folder"):
+                    let id = path.dropFirst("/api/v1/chats/".count).dropLast("/folder".count)
+                    if _chats[String(id)] == nil, _missingChats.contains(String(id)) {
+                        return .init(status: 401, body: #"{"detail":"We could not find what you're looking for :/"}"#)
+                    }
+                    _folderOps.append("move \(id) \((body["folder_id"] as? String) ?? "none")")
+                    return .init(body: "{}")
                 case ("GET", let path) where path.hasPrefix("/api/v1/chats/"):
                     guard let chat = _chats[String(path.dropFirst("/api/v1/chats/".count))] else {
                         return .init(status: 401, body: #"{"detail":"We could not find what you're looking for :/"}"#)
@@ -110,7 +171,11 @@ final class FakeServer: ReplyServer {
         client = WebUIClient(baseURL: base, auth: auth, session: session)
     }
 
+    /// How many times the live channel was asked for.
+    private(set) var connections = 0
+
     func sessionID() async throws -> String {
+        connections += 1
         if let connectError { throw connectError }
         return "sid"
     }
