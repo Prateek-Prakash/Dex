@@ -15,6 +15,10 @@ enum KeychainService {
     static let accessClientID = "ollama.access.id"
     static let accessClientSecret = "ollama.access.secret"
     static let ollamaAPIKey = "ollama.com.key"
+    /// The Open WebUI account's password, sent only to sign in.
+    static let webUIPassword = "webui.password"
+    /// The login token, its expiry and whose it is, as JSON.
+    static let webUIToken = "webui.token"
 
     static func load(_ account: String) -> String {
         let query: [String: Any] = [
