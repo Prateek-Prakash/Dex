@@ -17,7 +17,7 @@ struct RootView: View {
         case chat
         case folders
         /// One folder, by id.
-        case folder(UUID)
+        case folder(String)
     }
     
     /// Owned here so the connection survives switching pages; it owns the

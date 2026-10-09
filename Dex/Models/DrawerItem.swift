@@ -36,12 +36,12 @@ struct DrawerItem: Identifiable, Hashable {
     
     /// A saved chat's row, keyed by the chat's id.
     init(_ chat: Chat) {
-        self.init(id: chat.id.uuidString, title: chat.title, kind: chat.folder == nil ? .chat : .folderChat)
+        self.init(id: chat.id, title: chat.title, kind: chat.folder == nil ? .chat : .folderChat)
     }
     
     /// A folder's row, keyed by the folder's id.
     init(_ folder: Folder) {
-        self.init(id: folder.id.uuidString, title: folder.name, kind: .folder)
+        self.init(id: folder.id, title: folder.name, kind: .folder)
     }
 
     /// Pinned folders and chats together, the latest pinned first.

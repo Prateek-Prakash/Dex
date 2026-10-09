@@ -10,13 +10,13 @@ import Foundation
 /// A page pushed onto the main screen's stack, reached from another page
 /// rather than the drawer: it gets the back button and edge swipe.
 enum Route: Hashable {
-    case folder(UUID)
-    case chat(UUID)
+    case folder(String)
+    case chat(String)
     /// A new chat in the folder with this id: a folder page's New Session.
-    case newChat(UUID)
+    case newChat(String)
 
     /// The folder's or chat's id.
-    var id: UUID {
+    var id: String {
         switch self {
         case .folder(let id), .chat(let id), .newChat(let id): id
         }
@@ -36,7 +36,7 @@ enum Route: Hashable {
     /// - Parameters:
     ///   - root: the drawer page under the stack.
     ///   - rootChatID: the chat on the root chat page, when that's the root.
-    static func pushing(_ route: Route, onto routes: [Route], root: RootView.Page, rootChatID: UUID?) -> [Route] {
+    static func pushing(_ route: Route, onto routes: [Route], root: RootView.Page, rootChatID: String?) -> [Route] {
         switch (route, root) {
         case (.folder(let id), .folder(let rootID)) where id == rootID:
             return []

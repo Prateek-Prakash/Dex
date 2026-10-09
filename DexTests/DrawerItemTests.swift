@@ -30,10 +30,10 @@ struct DrawerItemTests {
 /// The main screen's stack: pushing, and going back instead of pushing a
 /// page that's already there.
 struct RouteTests {
-    private let lab = UUID()
-    private let recipes = UUID()
-    private let notes = UUID()
-    private let trip = UUID()
+    private let lab = Storage.newID()
+    private let recipes = Storage.newID()
+    private let notes = Storage.newID()
+    private let trip = Storage.newID()
 
     @Test func newPagesPush() {
         #expect(Route.pushing(.folder(lab), onto: [], root: .folders, rootChatID: nil) == [.folder(lab)])

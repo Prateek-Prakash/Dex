@@ -17,10 +17,9 @@ struct DrawerView: View {
     /// The page the main screen shows; its row is highlighted.
     var page: RootView.Page = .chat
     /// The saved chat on the main screen; its row is highlighted.
-    var currentChatID: UUID?
-    /// Chats with a reply streaming here; their rows show a spinner, as do
-    /// chats replying on another device (`replyingChatIDs`).
-    var streamingChatIDs: Set<UUID> = []
+    var currentChatID: String?
+    /// Chats with a reply streaming here; their rows show a spinner.
+    var streamingChatIDs: Set<String> = []
     /// Shows a page on the main screen.
     var select: (RootView.Page) -> Void = { _ in }
     /// Opens a saved chat on the main screen.
@@ -45,14 +44,9 @@ struct DrawerView: View {
     var newSession: () -> Void = {}
     
     /// Every saved chat, latest first.
-    @Query(sort: \Chat.lastMessageAt, order: .reverse) private var chats: [Chat]
+    @Query(sort: \Chat.updatedAt, order: .reverse) private var chats: [Chat]
     /// Every folder; the pinned ones show.
     @Query private var folders: [Folder]
-    /// Replies stored streaming: here, on another device, or cut off.
-    @Query(filter: Message.streaming) private var streamingMessages: [Message]
-    /// Ticks every few seconds, so a reply whose device went quiet loses
-    /// its spinner once it stops counting as live.
-    @State private var now = Date()
     /// The chat whose Rename or Delete dialog is up.
     @State private var chatToRename: Chat?
     @State private var chatToDelete: Chat?
@@ -123,20 +117,6 @@ struct DrawerView: View {
             }
         }
         .tint(Color.ink)
-        .task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(15))
-                now = .now
-            }
-        }
-    }
-
-    /// Chats with a reply coming, here or on another device.
-    private var replyingChatIDs: Set<UUID> {
-        let elsewhere = streamingMessages
-            .filter { $0.isLiveElsewhere(now: now) }
-            .compactMap { $0.chat?.id }
-        return streamingChatIDs.union(elsewhere)
     }
 
     /// The highlight's edges line up with the title and it is 48pt tall; a
@@ -162,7 +142,7 @@ struct DrawerView: View {
             .listRowInsets(rowInsets)
             .listRowBackground(Color.clear)
         ForEach(items) { item in
-            if item.kind == .folder, let folder = folders.first(where: { $0.id.uuidString == item.id }) {
+            if item.kind == .folder, let folder = folders.first(where: { $0.id == item.id }) {
                 // Follows the page, so a rename or a delete anywhere can't
                 // leave it stale.
                 row(item.icon, item.title, isSelected: page == .folder(folder.id)) {
@@ -172,9 +152,9 @@ struct DrawerView: View {
                     ItemActions(isPinned: folder.pinnedAt != nil, pin: { pinFolder(folder) },
                                 rename: { folderToRename = folder }, delete: { folderToDelete = folder })
                 }
-            } else if let chat = chats.first(where: { $0.id.uuidString == item.id }) {
+            } else if let chat = chats.first(where: { $0.id == item.id }) {
                 row(item.icon, item.title, isSelected: page == .chat && chat.id == currentChatID,
-                    isReplying: replyingChatIDs.contains(chat.id)) {
+                    isReplying: streamingChatIDs.contains(chat.id)) {
                     openChat(chat)
                 }
                 .contextMenu {

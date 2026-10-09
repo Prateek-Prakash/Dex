@@ -9,7 +9,7 @@ import SwiftData
 import SwiftUI
 
 /// One folder, titled with its name, listing its chats, latest first.
-/// Found by id, so a rename or sync shows at once and two folders can never
+/// Found by id, so a rename or refresh shows at once and two folders can never
 /// be confused. Opened from the drawer it has the drawer button; pushed
 /// (from Folders, or a chat's folder chip), the back button. ⋯ pins,
 /// renames or deletes it; deleted anywhere, it leaves. A chat opens pushed
@@ -38,7 +38,7 @@ struct FolderView: View {
     @State private var chatToDelete: Chat?
     @State private var chatToOrganize: Chat?
 
-    init(id: UUID, isPushed: Bool = false, openDrawer: @escaping () -> Void = {},
+    init(id: String, isPushed: Bool = false, openDrawer: @escaping () -> Void = {},
          push: @escaping (Route) -> Void = { _ in },
          leave: @escaping () -> Void = {}) {
         self.isPushed = isPushed
@@ -46,7 +46,7 @@ struct FolderView: View {
         self.push = push
         self.leave = leave
         _folders = Query(filter: #Predicate<Folder> { $0.id == id })
-        _chats = Query(filter: Chat.inFolder(id), sort: \Chat.lastMessageAt, order: .reverse)
+        _chats = Query(filter: Chat.inFolder(id), sort: \Chat.updatedAt, order: .reverse)
     }
 
     private var folder: Folder? { folders.first }
@@ -85,7 +85,7 @@ struct FolderView: View {
         .chatActionAlerts(renaming: $chatToRename, deleting: $chatToDelete,
                           rename: { chatVM.rename($0, to: $1) }, delete: { chatVM.delete($0) })
         .organizeSheet(for: $chatToOrganize) { chatVM.move($0, to: $1) }
-        // Deleted from the drawer or another device: nothing left to show.
+        // Deleted from the drawer or the server: nothing left to show.
         .onChange(of: folder == nil) {
             if folder == nil { leave() }
         }
@@ -93,7 +93,7 @@ struct FolderView: View {
 }
 
 #Preview {
-    FolderView(id: UUID())
+    FolderView(id: Storage.newID())
         .modelContainer(Storage.inMemory())
         .environmentObject(ChatVM())
 }

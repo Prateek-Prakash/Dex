@@ -19,13 +19,11 @@ private final class ChatSession {
     let isIncognito: Bool
     var messages: [ChatMessage] = []
     /// The saved chat's stored messages, by id.
-    var records: [UUID: Message] = [:]
+    var records: [String: Message] = [:]
     var streamTask: Task<Void, Never>?
     var titleTask: Task<Void, Never>?
-    /// Saves the streaming reply on a timer, so other devices see it.
-    var checkpointTask: Task<Void, Never>?
     /// The reply streaming here, until it finishes.
-    var replyID: UUID?
+    var replyID: String?
 
     init(isIncognito: Bool) {
         self.isIncognito = isIncognito
@@ -40,7 +38,7 @@ private final class ChatSession {
         messages = stored.map { ChatMessage($0) }
     }
 
-    /// A reply is streaming here (not on another device).
+    /// A reply is streaming here.
     var isReplying: Bool {
         replyID != nil
     }
@@ -59,7 +57,7 @@ final class ChatVM: ObservableObject {
     /// The saved chat on screen; nil until a saved chat's first message.
     @Published private(set) var chat: Chat?
     /// Saved chats with a reply streaming here, on screen or not.
-    @Published private(set) var streamingChatIDs: Set<UUID> = []
+    @Published private(set) var streamingChatIDs: Set<String> = []
     /// Where chats are saved; nil keeps everything in memory (previews).
     var context: ModelContext?
 
@@ -73,8 +71,8 @@ final class ChatVM: ObservableObject {
     /// Keeps a reply going for a while after the app leaves the screen.
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
-    /// The chat on screen has a reply coming, here or on another device:
-    /// nothing can be sent until it finishes.
+    /// The chat on screen has a reply coming: nothing can be sent until it
+    /// finishes.
     var isStreaming: Bool {
         messages.last?.status == .streaming
     }
@@ -103,11 +101,10 @@ final class ChatVM: ObservableObject {
         return total
     }
 
-    /// After every message in the session and every stored one: another
-    /// device may have added to the chat since it opened, and a repeated
+    /// After every message in the session and every stored one: a repeated
     /// number would mix the two orders on the next open.
     private func nextSequence(_ session: ChatSession) -> Int {
-        let stored = session.chat?.messages?.map(\.sequence) ?? []
+        let stored = session.chat?.messages.map(\.sequence) ?? []
         return ((session.messages.map(\.sequence) + stored).max() ?? -1) + 1
     }
 
@@ -124,7 +121,8 @@ final class ChatVM: ObservableObject {
         guard !text.isEmpty, !isStreaming else { return }
         let session = current ?? ChatSession(isIncognito: isIncognito)
         current = session
-        let message = ChatMessage(role: .user, content: text, sequence: nextSequence(session))
+        let message = ChatMessage(role: .user, content: text, sequence: nextSequence(session),
+                                  parentId: session.messages.last?.id)
         session.messages.append(message)
         save(message, in: session)
         publish(session)
@@ -157,7 +155,6 @@ final class ChatVM: ObservableObject {
     func move(_ chat: Chat, to folder: Folder?) {
         guard chat.folder !== folder else { return }
         chat.folder = folder
-        chat.updatedAt = .now
         commit()
     }
 
@@ -177,9 +174,8 @@ final class ChatVM: ObservableObject {
         publish(current)
     }
 
-    /// Takes in what reached the store since the chat opened: another
-    /// device's messages, replies it finished, a reply it retried away. A
-    /// reply streaming here keeps its own copy; the store has only its start.
+    /// Takes in what reached the store since the chat opened. A reply
+    /// streaming here keeps its own copy; the store has only its start.
     func refresh() {
         guard let session = current, let chat = session.chat else { return }
         guard !chat.isDeleted, chat.modelContext != nil else { return reset() }
@@ -195,10 +191,9 @@ final class ChatVM: ObservableObject {
     }
 
     /// The stored messages, in order, but the reply streaming here (`replyID`)
-    /// as it is here, kept even if the store lost it (another device retried
-    /// it away): it is saved again when it finishes. A reply streaming on
-    /// another device takes each checkpoint from the store.
-    nonisolated static func merge(local: [ChatMessage], stored: [ChatMessage], replyID: UUID?) -> [ChatMessage] {
+    /// as it is here, kept even if the store lost it: it is saved again when
+    /// it finishes.
+    nonisolated static func merge(local: [ChatMessage], stored: [ChatMessage], replyID: String?) -> [ChatMessage] {
         let streaming = local.filter { $0.id == replyID }
         return (stored.filter { $0.id != replyID } + streaming)
             .sorted { $0.sequence < $1.sequence }
@@ -210,7 +205,6 @@ final class ChatVM: ObservableObject {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, title != chat.title else { return }
         chat.title = title
-        chat.updatedAt = .now
         commit()
     }
 
@@ -228,6 +222,8 @@ final class ChatVM: ObservableObject {
     func delete(_ folder: Folder) {
         if let chat, chat.folder === folder { reset() }
         drop { $0.chat?.folder === folder }
+        // As the server does: a folder's chats go with it.
+        for chat in folder.chats { context?.delete(chat) }
         context?.delete(folder)
         commit()
     }
@@ -254,9 +250,9 @@ final class ChatVM: ObservableObject {
         for (index, item) in items.enumerated() {
             let pinnedAt = now.addingTimeInterval(-Double(index))
             if item.kind == .folder {
-                folders.first { $0.id.uuidString == item.id }?.pinnedAt = pinnedAt
+                folders.first { $0.id == item.id }?.pinnedAt = pinnedAt
             } else {
-                chats.first { $0.id.uuidString == item.id }?.pinnedAt = pinnedAt
+                chats.first { $0.id == item.id }?.pinnedAt = pinnedAt
             }
         }
         commit()
@@ -289,17 +285,19 @@ final class ChatVM: ObservableObject {
         publish(nil)
     }
 
-    /// Saves replies stored streaming but no longer coming as stopped, so
-    /// they stay that way: a later save or sync can't bring them back.
+    /// Saves replies stored streaming but not streaming here as stopped:
+    /// a quit cut them off.
     private func settleCutOffReplies(in session: ChatSession) {
         let cutOff = session.records.values.filter {
-            $0.status == ChatMessage.Status.streaming.rawValue && $0.id != session.replyID && !$0.isLiveElsewhere()
+            $0.status == ChatMessage.Status.streaming.rawValue && $0.id != session.replyID
         }
         guard !cutOff.isEmpty else { return }
         for record in cutOff {
             record.status = ChatMessage.Status.stopped.rawValue
-            record.checkpointAt = nil
-            record.replyDevice = nil
+        }
+        let ids = Set(cutOff.map(\.id))
+        for index in session.messages.indices where ids.contains(session.messages[index].id) {
+            session.messages[index].status = .stopped
         }
         commit()
     }
@@ -308,7 +306,6 @@ final class ChatVM: ObservableObject {
     private func drop(where isGone: (ChatSession) -> Bool) {
         for session in background where isGone(session) {
             session.streamTask?.cancel()
-            session.checkpointTask?.cancel()
             session.titleTask?.cancel()
         }
         background.removeAll(where: isGone)
@@ -365,7 +362,7 @@ final class ChatVM: ObservableObject {
             session.chat = chat
             return chat
         }()
-        // Gone from the store (another device retried it away): saved anew.
+        // Gone from the store: saved anew.
         if let record = session.records[message.id], record.isDeleted || record.modelContext == nil {
             session.records[message.id] = nil
         }
@@ -377,20 +374,40 @@ final class ChatVM: ObservableObject {
             return record
         }()
         record.update(from: message)
-        let isStreaming = message.status == .streaming
-        record.checkpointAt = isStreaming ? .now : nil
-        record.replyDevice = isStreaming ? Message.thisDevice : nil
+        if let parentID = message.parentId {
+            link(message.id, to: parentID, in: session)
+        }
         if let model = message.model { chat.model = model }
         chat.updatedAt = .now
-        chat.lastMessageAt = .now
+        // Read as it arrives: a chat's own messages never mark it unread.
+        chat.lastReadAt = chat.updatedAt
         commit()
     }
 
-    /// Deletes a stored message: a reply being asked for again.
-    private func forget(_ id: UUID, in session: ChatSession) {
+    /// Deletes a stored message: a reply being asked for again. Its parent
+    /// stops listing it.
+    private func forget(_ id: String, in session: ChatSession) {
         guard let record = session.records.removeValue(forKey: id) else { return }
+        if let parentID = record.parentId {
+            session.records[parentID]?.childrenIds.removeAll { $0 == id }
+            if let index = session.messages.firstIndex(where: { $0.id == parentID }) {
+                session.messages[index].childrenIds.removeAll { $0 == id }
+            }
+        }
         context?.delete(record)
         commit()
+    }
+
+    /// Lists `id` among its parent's replies, stored and in memory alike, so
+    /// a later save of the parent keeps it.
+    private func link(_ id: String, to parentID: String, in session: ChatSession) {
+        if let index = session.messages.firstIndex(where: { $0.id == parentID }),
+           !session.messages[index].childrenIds.contains(id) {
+            session.messages[index].childrenIds.append(id)
+        }
+        if let parent = session.records[parentID], !parent.childrenIds.contains(id) {
+            parent.childrenIds.append(id)
+        }
     }
 
     private func commit() {
@@ -418,7 +435,8 @@ final class ChatVM: ObservableObject {
 
     private func reply(in session: ChatSession, client: OllamaClient?, model: OllamaModel?, web: OllamaClient?) {
         let history = Self.history(session.messages)
-        let reply = ChatMessage(role: .assistant, sequence: nextSequence(session), model: model?.name, status: .streaming)
+        let reply = ChatMessage(role: .assistant, sequence: nextSequence(session), model: model?.name, status: .streaming,
+                                parentId: session.messages.last?.id)
         session.messages.append(reply)
         session.replyID = reply.id
         // Saved streaming, so a quit mid-reply reopens as stopped and can retry.
@@ -439,15 +457,12 @@ final class ChatVM: ObservableObject {
         session.streamTask = Task {
             await stream(reply.id, in: session, request: request, client: client, web: web)
         }
-        session.checkpointTask = Task {
-            await checkpoint(reply.id, in: session)
-        }
     }
 
     /// Streams the reply. A model that calls tools gets their results and is
     /// asked again, in the same reply, until it answers; those results live
     /// only in this request, so later turns don't carry them.
-    private func stream(_ id: UUID, in session: ChatSession, request: OllamaChatRequest, client: OllamaClient,
+    private func stream(_ id: String, in session: ChatSession, request: OllamaChatRequest, client: OllamaClient,
                         web: OllamaClient?) async {
         var request = request
         var content = ""
@@ -540,28 +555,15 @@ final class ChatVM: ObservableObject {
         }
     }
 
-    /// Saves a streaming reply as it stands every few seconds, tokens or
-    /// not (a model still loading sends none), so other devices see it come
-    /// in and know it's alive.
-    private func checkpoint(_ id: UUID, in session: ChatSession) async {
-        while session.replyID == id {
-            try? await Task.sleep(for: .seconds(Message.checkpointInterval))
-            guard !Task.isCancelled, session.replyID == id,
-                  let message = session.messages.first(where: { $0.id == id }) else { return }
-            save(message, in: session)
-        }
-    }
-
     /// Ends a reply and saves it. A chat that left the screen is then done
     /// with: the store has it all.
-    private func finish(_ id: UUID, in session: ChatSession, status: ChatMessage.Status, error: String? = nil) {
+    private func finish(_ id: String, in session: ChatSession, status: ChatMessage.Status, error: String? = nil) {
         update(id, in: session) {
             $0.status = status
             $0.error = error
         }
         if session.replyID == id {
             session.replyID = nil
-            session.checkpointTask?.cancel()
         }
         if let message = session.messages.first(where: { $0.id == id }) { save(message, in: session) }
         background.removeAll { $0 === session }
@@ -596,14 +598,13 @@ final class ChatVM: ObservableObject {
             // A rename or delete while the request ran wins.
             guard !chat.isDeleted, chat.modelContext != nil, chat.title == fallback else { return }
             chat.title = title
-            chat.updatedAt = .now
             commit()
         }
     }
 
     /// Changes one message of a session, showing it if on screen; a no-op
     /// once it's gone (retried away).
-    private func update(_ id: UUID, in session: ChatSession, _ change: (inout ChatMessage) -> Void) {
+    private func update(_ id: String, in session: ChatSession, _ change: (inout ChatMessage) -> Void) {
         guard let index = session.messages.firstIndex(where: { $0.id == id }) else { return }
         change(&session.messages[index])
         publish(session)

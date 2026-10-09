@@ -264,9 +264,9 @@ extension StubbedNetworkTests {
             vm.send("First", client: Self.client(), model: Self.model)
             await vm.waitForReply()
             let chat = try #require(vm.chat)
-            // Another device's exchange arrives through sync.
+            // An exchange from elsewhere lands in the store.
             for sequence in [2, 3] {
-                let synced = Message(id: UUID())
+                let synced = Message(id: Storage.newID())
                 context.insert(synced)
                 synced.chat = chat
                 synced.sequence = sequence
@@ -277,14 +277,14 @@ extension StubbedNetworkTests {
             #expect(Array(chat.sortedMessages.suffix(2).map(\.content)) == ["Second", "Hello there"])
         }
 
-        @Test func refreshShowsWhatAnotherDeviceSynced() async throws {
+        @Test func refreshShowsWhatLandedInTheStore() async throws {
             let (vm, context) = Self.vm()
             vm.send("First", client: Self.client(), model: Self.model)
             await vm.waitForReply()
             let chat = try #require(vm.chat)
             let messageCount = vm.messages.count
-            // Another device's message arrives, and it rewrites the reply.
-            let synced = Message(id: UUID())
+            // A message lands in the store, and the reply is rewritten there.
+            let synced = Message(id: Storage.newID())
             context.insert(synced)
             synced.chat = chat
             synced.sequence = 2
@@ -326,47 +326,13 @@ extension StubbedNetworkTests {
 
             let merged = ChatVM.merge(local: [user, local], stored: [user, storedReply, synced], replyID: local.id)
             #expect(merged == [user, local, synced])
-            // Retried away on another device: kept, saved again when it ends.
+            // Gone from the store: kept, saved again when it ends.
             #expect(ChatVM.merge(local: [user, local], stored: [user], replyID: local.id) == [user, local])
             // Nothing streaming here: the store wins, messages gone there go here.
             #expect(ChatVM.merge(local: [user, storedReply], stored: [user], replyID: nil) == [user])
-            // Streaming on another device: each checkpoint comes from the store.
-            var checkpoint = local
-            checkpoint.content = "Half an answer"
-            #expect(ChatVM.merge(local: [user, local], stored: [user, checkpoint], replyID: nil) == [user, checkpoint])
-        }
-
-        @Test func replyStreamingElsewhereShowsLiveUntilItGoesQuiet() async throws {
-            let (vm, context) = Self.vm()
-            vm.send("Hi", client: Self.client(), model: Self.model)
-            await vm.waitForReply()
-            let chat = try #require(vm.chat)
-            // Another device starts a reply and checkpoints it.
-            let reply = Message(id: UUID())
-            context.insert(reply)
-            reply.chat = chat
-            reply.role = "assistant"
-            reply.sequence = 2
-            reply.status = "streaming"
-            reply.thinking = "Hmm, let me see"
-            reply.checkpointAt = .now
-            reply.replyDevice = "another-device"
-            try context.save()
-
-            vm.refresh()
-            #expect(vm.messages.last?.status == .streaming)
-            #expect(vm.messages.last?.thinking == "Hmm, let me see")
-            #expect(vm.isStreaming)
-            #expect(!vm.isReplyingHere)
-            #expect(vm.streamingChatIDs.isEmpty)
-            // Nothing can be sent until it finishes.
-            vm.send("More", client: Self.client(), model: Self.model)
-            #expect(vm.messages.count == 3)
-
-            // Live while checkpoints keep coming; stopped once they don't.
-            let checkpoint = try #require(reply.checkpointAt)
-            #expect(ChatMessage(reply, now: checkpoint.addingTimeInterval(30)).status == .streaming)
-            #expect(ChatMessage(reply, now: checkpoint.addingTimeInterval(Message.liveWindow)).status == .stopped)
+            var newer = local
+            newer.content = "Half an answer"
+            #expect(ChatVM.merge(local: [user, local], stored: [user, newer], replyID: nil) == [user, newer])
         }
 
         @Test func cutOffReplyIsSavedStoppedAndStaysThat() async throws {
@@ -375,15 +341,13 @@ extension StubbedNetworkTests {
             await vm.waitForReply()
             await vm.waitForTitle()
             let chat = try #require(vm.chat)
-            // This device's own reply, cut off by a quit a moment ago.
-            let reply = Message(id: UUID())
+            // A reply cut off by a quit a moment ago.
+            let reply = Message(id: Storage.newID())
             context.insert(reply)
             reply.chat = chat
             reply.role = "assistant"
             reply.sequence = 2
             reply.status = "streaming"
-            reply.checkpointAt = .now
-            reply.replyDevice = Message.thisDevice
             try context.save()
 
             vm.reset()
@@ -391,7 +355,6 @@ extension StubbedNetworkTests {
             #expect(vm.messages.last?.status == .stopped)
             #expect(vm.canRetry)
             #expect(reply.status == "stopped")
-            #expect(reply.checkpointAt == nil)
             // A rename, or any later save, leaves it stopped.
             vm.rename(chat, to: "Renamed")
             vm.refresh()
@@ -405,7 +368,7 @@ extension StubbedNetworkTests {
             context.insert(mine)
             context.insert(other)
             for (chat, content) in [(mine, "A"), (mine, "B"), (other, "C")] {
-                let message = Message(id: UUID())
+                let message = Message(id: Storage.newID())
                 context.insert(message)
                 message.chat = chat
                 message.content = content
@@ -415,11 +378,56 @@ extension StubbedNetworkTests {
             #expect(Set(found.map(\.content)) == ["A", "B"])
         }
 
-        @Test func quitMidReplyReopensStopped() {
-            let stored = Message(id: UUID())
-            stored.role = "assistant"
-            stored.status = "streaming"
-            #expect(ChatMessage(stored).status == .stopped)
+        @Test func messagesChainParentsAndChildren() async throws {
+            let (vm, _) = Self.vm()
+            vm.send("First", client: Self.client(), model: Self.model)
+            await vm.waitForReply()
+            vm.send("Second", client: Self.client(), model: Self.model)
+            await vm.waitForReply()
+            let stored = try #require(vm.chat).sortedMessages
+            #expect(stored.map(\.parentId) == [nil, stored[0].id, stored[1].id, stored[2].id])
+            #expect(stored.map(\.childrenIds) == [[stored[1].id], [stored[2].id], [stored[3].id], []])
+            // Ids take the server's form: lowercase UUIDs.
+            #expect(stored.allSatisfy { $0.id == $0.id.lowercased() && UUID(uuidString: $0.id) != nil })
+        }
+
+        @Test func retryDropsTheOldReplyFromItsParent() async throws {
+            let (vm, _) = Self.vm()
+            vm.send("Hi", client: Self.client(status: 200), model: nil)
+            await vm.waitForReply()
+            let failed = try #require(vm.messages.last)
+            #expect(failed.status == .failed)
+            vm.retry(client: Self.client(), model: Self.model)
+            await vm.waitForReply()
+            let stored = try #require(vm.chat).sortedMessages
+            #expect(stored.count == 2)
+            #expect(stored[0].childrenIds == [stored[1].id])
+            #expect(!stored[0].childrenIds.contains(failed.id))
+            // The in-memory copy agrees, so saving it again keeps the link.
+            #expect(vm.messages[0].childrenIds == [stored[1].id])
+        }
+
+        @Test func ownMessagesLeaveAChatRead() async throws {
+            let (vm, _) = Self.vm()
+            vm.send("Hi", client: Self.client(), model: Self.model)
+            await vm.waitForReply()
+            let chat = try #require(vm.chat)
+            #expect(!chat.isUnread)
+            // Something arriving later, as a server reply finished away would.
+            chat.updatedAt = .now.addingTimeInterval(60)
+            #expect(chat.isUnread)
+        }
+
+        @Test func renameLeavesRecentOrderAlone() async throws {
+            let (vm, _) = Self.vm()
+            vm.send("Hi", client: Self.client(), model: Self.model)
+            await vm.waitForReply()
+            await vm.waitForTitle()
+            let chat = try #require(vm.chat)
+            let updatedAt = chat.updatedAt
+            vm.rename(chat, to: "Renamed")
+            vm.togglePin(chat)
+            #expect(chat.updatedAt == updatedAt)
         }
 
         @Test func deletingOpenChatClearsScreenAndMessages() async throws {
@@ -580,7 +588,7 @@ struct PinTests {
         let pinned = DrawerItem.pinned(folders: [lab, recipes], chats: [trip, loose, notes])
         #expect(pinned.map(\.title) == ["Notes", "Lab", "Trip"])
         #expect(pinned.map(\.kind) == [.chat, .folder, .chat])
-        #expect(pinned[1].id == lab.id.uuidString)
+        #expect(pinned[1].id == lab.id)
     }
 
     @Test func reorderedPinsKeepTheDraggedOrder() throws {
@@ -637,18 +645,18 @@ struct OrganizeTests {
         let chat = Chat(title: "Notes")
         [lab, recipes].forEach(context.insert)
         context.insert(chat)
-        let lastMessageAt = chat.lastMessageAt
+        let updatedAt = chat.updatedAt
 
         vm.move(chat, to: lab)
         #expect(chat.folder === lab)
         #expect(DrawerItem(chat).kind == .folderChat)
         vm.move(chat, to: recipes)
         #expect(chat.folder === recipes)
-        #expect(lab.chats?.isEmpty == true)
+        #expect(lab.chats.isEmpty)
         vm.move(chat, to: nil)
         #expect(chat.folder == nil)
         #expect(DrawerItem(chat).kind == .chat)
-        #expect(chat.lastMessageAt == lastMessageAt)
+        #expect(chat.updatedAt == updatedAt)
         #expect(!context.hasChanges)
     }
 
@@ -692,5 +700,34 @@ struct OrganizeTests {
         try context.save()
         vm.send("Hi", client: nil, model: nil)
         #expect(vm.chat?.folder == nil)
+    }
+}
+
+/// The cache itself: one row per server id, and the old store's files gone.
+@MainActor
+struct CacheTests {
+    @Test func sameIDIsOneRow() throws {
+        let context = ModelContext(Storage.inMemory())
+        context.insert(Chat(id: "c1", title: "First"))
+        try context.save()
+        context.insert(Chat(id: "c1", title: "Again"))
+        try context.save()
+        let chats = try context.fetch(FetchDescriptor<Chat>())
+        #expect(chats.map(\.title) == ["Again"])
+    }
+
+    @Test func oldStoreFilesAreRemoved() throws {
+        let directory = URL.temporaryDirectory.appending(path: "DexOldStore-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for name in ["default.store", "default.store-shm", "default.store-wal", "Dex Cache.store"] {
+            try Data("x".utf8).write(to: directory.appending(path: name))
+        }
+        for folder in ["default_ckAssets", ".default_SUPPORT/_EXTERNAL_DATA"] {
+            try FileManager.default.createDirectory(at: directory.appending(path: folder), withIntermediateDirectories: true)
+        }
+        Storage.removeOldStore(in: directory)
+        let left = try FileManager.default.contentsOfDirectory(atPath: directory.path())
+        #expect(left == ["Dex Cache.store"])
     }
 }

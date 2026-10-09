@@ -163,7 +163,7 @@ private struct FolderActionAlerts: ViewModifier {
                 Button("Delete", role: .destructive) { delete(folder) }
                 Button("Cancel", role: .cancel) {}
             } message: { folder in
-                Text("\(folder.name)\n\(Folder.chatCount(folder.chats?.count ?? 0))")
+                Text("\(folder.name)\n\(Folder.chatCount(folder.chats.count))")
             }
     }
 

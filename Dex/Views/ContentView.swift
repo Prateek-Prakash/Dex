@@ -235,7 +235,7 @@ struct PushedChatView: View {
     var leave: () -> Void = {}
     @Query private var chats: [Chat]
 
-    init(id: UUID, push: @escaping (Route) -> Void, leave: @escaping () -> Void) {
+    init(id: String, push: @escaping (Route) -> Void, leave: @escaping () -> Void) {
         self.push = push
         self.leave = leave
         _chats = Query(filter: #Predicate<Chat> { $0.id == id })
@@ -261,7 +261,7 @@ struct PushedNewChatView: View {
     var leave: () -> Void = {}
     @Query private var folders: [Folder]
 
-    init(folderID: UUID, push: @escaping (Route) -> Void, leave: @escaping () -> Void) {
+    init(folderID: String, push: @escaping (Route) -> Void, leave: @escaping () -> Void) {
         self.push = push
         self.leave = leave
         _folders = Query(filter: #Predicate<Folder> { $0.id == folderID })
@@ -280,18 +280,16 @@ struct PushedNewChatView: View {
     }
 }
 
-/// Keeps the open chat in step with the store. Its queries refire once
-/// a sync from another device is merged in (and after this device's own
-/// saves, which change nothing): new messages and a reply's checkpoints
-/// then show, and a chat deleted elsewhere leaves the screen. A recheck
-/// every few seconds lets a reply whose device went quiet turn stopped.
+/// Keeps the open chat in step with the store. Its queries refire after
+/// any change to the chat's messages; a chat deleted from the store leaves
+/// the screen.
 private struct ChatSync: View {
-    let chatID: UUID
+    let chatID: String
     @EnvironmentObject private var chatVM: ChatVM
     @Query private var chats: [Chat]
     @Query private var messages: [Message]
 
-    init(chatID: UUID) {
+    init(chatID: String) {
         self.chatID = chatID
         _chats = Query(filter: #Predicate<Chat> { $0.id == chatID })
         _messages = Query(filter: Message.inChat(chatID))
@@ -301,12 +299,6 @@ private struct ChatSync: View {
         Color.clear
             .onChange(of: messages.map { ChatMessage($0) }) {
                 chatVM.refresh()
-            }
-            .task {
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(15))
-                    if chatVM.isStreaming, !chatVM.isReplyingHere { chatVM.refresh() }
-                }
             }
             .onChange(of: chats.isEmpty) {
                 if chats.isEmpty, chatVM.chat?.id == chatID { chatVM.reset() }

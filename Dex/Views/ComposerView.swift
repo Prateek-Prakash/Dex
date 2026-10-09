@@ -137,7 +137,7 @@ struct ComposerView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dictate")
-            // A reply coming on another device can't be stopped here; Send
+            // A reply not streaming here can't be stopped here; Send
             // stays off until it finishes.
             if chatVM.isReplyingHere {
                 Button {

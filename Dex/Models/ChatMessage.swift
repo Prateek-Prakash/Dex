@@ -7,8 +7,7 @@
 
 import Foundation
 
-/// One message in a chat. Held in memory for now; its fields mirror the
-/// stored Message planned for SwiftData, so saving chats is a swap.
+/// One message in a chat, in memory; `Message` is its stored form.
 struct ChatMessage: Identifiable, Equatable, Sendable {
     enum Role: String, Sendable {
         case user, assistant, system
@@ -18,7 +17,7 @@ struct ChatMessage: Identifiable, Equatable, Sendable {
         case streaming, done, failed, stopped
     }
 
-    var id = UUID()
+    var id = Storage.newID()
     var role: Role
     var content: String = ""
     /// The model's reasoning, when it thinks out loud; never sent back.
@@ -36,4 +35,8 @@ struct ChatMessage: Identifiable, Equatable, Sendable {
     /// The reply's prompt and output sizes, from the stream's final line.
     var promptTokens: Int?
     var outputTokens: Int?
+    /// The message this one answers or follows; nil for the first.
+    var parentId: String?
+    /// Every reply to this message, retried ones included.
+    var childrenIds: [String] = []
 }

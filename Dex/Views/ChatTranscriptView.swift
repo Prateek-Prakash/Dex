@@ -31,15 +31,15 @@ struct ChatTranscriptView: View {
     /// Within reach of the end, by the latest geometry.
     @State private var isNearBottom = true
     /// The message pinned to the top: the last one sent here.
-    @State private var pinnedID: UUID?
+    @State private var pinnedID: String?
     /// Each turn's measured height, by its first message: the pinned one's
     /// is known the moment it's pinned. Reset to 0 at the pin, the room came
     /// out too big, then shrank once the turn re-measured, and the shorter
     /// list dropped the message halfway down.
-    @State private var turnHeights: [UUID: CGFloat] = [:]
+    @State private var turnHeights: [String: CGFloat] = [:]
     /// Each turn's top in the list's content, by its first message: the pin
     /// scrolls to it. Scrolling to the turn by id aimed short.
-    @State private var turnTops: [UUID: CGFloat] = [:]
+    @State private var turnTops: [String: CGFloat] = [:]
     /// The list's height, and the height between the toolbar and the
     /// composer: where the reply ends, and how much of it shows.
     @State private var contentHeight: CGFloat = 0
@@ -195,7 +195,7 @@ struct ChatTranscriptView: View {
     /// Pins a message to the top; its reply grows below, not followed. The
     /// scroll waits a layout pass for the room to exist; the room then
     /// shrinks as the reply grows, keeping the list's height.
-    private func pin(_ id: UUID) {
+    private func pin(_ id: String) {
         pinnedID = id
         isAligningPin = true
         isFollowing = false
@@ -212,7 +212,7 @@ struct ChatTranscriptView: View {
     /// Puts a turn's top just under the toolbar: `scrollTo(y:)` already
     /// counts the toolbar's inset (subtracting it again left the message
     /// one toolbar-height low).
-    private func scrollToPin(_ id: UUID) {
+    private func scrollToPin(_ id: String) {
         guard let top = turnTops[id] else { return }
         position.scrollTo(y: top)
     }
@@ -220,7 +220,7 @@ struct ChatTranscriptView: View {
     private static let content = "transcriptContent"
 
     /// Brings the pinned message back to the top, gliding, never popping.
-    private func alignPin(_ id: UUID) {
+    private func alignPin(_ id: String) {
         withAnimation(.easeOut(duration: 0.25)) {
             scrollToPin(id)
         }
@@ -263,7 +263,7 @@ enum TranscriptLayout {
     }
 
     /// The message to pin: the last one sent, while its reply is coming.
-    static func pinTarget(_ messages: [ChatMessage]) -> UUID? {
+    static func pinTarget(_ messages: [ChatMessage]) -> String? {
         guard let last = messages.last, last.role == .assistant, last.status == .streaming else { return nil }
         return messages.last { $0.role != .assistant }?.id
     }
@@ -289,8 +289,8 @@ enum TranscriptLayout {
 
 /// What the pin follows: the chat on screen and the message to pin.
 private struct PinKey: Equatable {
-    let chatID: UUID?
-    let target: UUID?
+    let chatID: String?
+    let target: String?
 }
 
 /// Where the transcript is scrolled, and the height it shows.

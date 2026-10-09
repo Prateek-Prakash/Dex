@@ -7,25 +7,28 @@
 
 import Foundation
 import SwiftData
-import UIKit
 
-// Stored in SwiftData and synced through the iCloud private database.
-// CloudKit's rules shape every model here: no unique attributes, every
-// property optional or defaulted, every relationship optional with an inverse.
+// Stored in SwiftData on this device only: a cache of what the Open WebUI
+// server holds, keyed by the server's ids, so Dex opens fast and reads
+// offline.
 
-/// A folder of chats. Deleting it deletes its chats.
+/// A folder of chats. The server decides what deleting one takes with it;
+/// the cache only lets go of its chats.
 @Model
 final class Folder {
-    var id: UUID = UUID()
-    var name: String = ""
+    /// The server's id.
+    @Attribute(.unique) var id: String
+    var name: String
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
-    /// Nil when unpinned; also orders the pinned section.
+    /// Nil when unpinned; also orders the pinned section. Open WebUI has no
+    /// pinned folders, so this lives in the folder's `meta` on the server.
     var pinnedAt: Date?
-    @Relationship(deleteRule: .cascade, inverse: \Chat.folder)
-    var chats: [Chat]? = []
+    @Relationship(deleteRule: .nullify, inverse: \Chat.folder)
+    var chats: [Chat] = []
 
-    init(name: String) {
+    init(id: String = Storage.newID(), name: String) {
+        self.id = id
         self.name = name
     }
 
@@ -41,8 +44,7 @@ final class Folder {
     }
 
     /// Saves a new folder named `name`, trimmed. Names are unique, ignoring
-    /// case. CloudKit can't enforce that, so two devices creating one name
-    /// at the same moment can still both keep theirs.
+    /// case.
     static func create(named name: String, in context: ModelContext) -> Creation {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return .blank }
@@ -106,41 +108,55 @@ final class Folder {
 /// A saved chat. Incognito chats never become one.
 @Model
 final class Chat {
-    var id: UUID = UUID()
-    var title: String = ""
+    /// The server's id.
+    @Attribute(.unique) var id: String
+    var title: String
     var createdAt: Date = Date()
+    /// When a message last arrived, as the server counts it: renames, pins
+    /// and moves leave it alone. Sorts Recent.
     var updatedAt: Date = Date()
-    /// When a message last arrived; sorts Recent.
-    var lastMessageAt: Date = Date()
-    /// Nil when unpinned; also orders the pinned section.
+    /// When the chat was last read; an `updatedAt` after it is unread.
+    var lastReadAt: Date?
+    /// The server's `updatedAt` when `messages` were last fetched; a newer
+    /// one means they are out of date. Nil: never fetched (a title only).
+    var messagesSyncedAt: Date?
+    /// Nil when unpinned; also orders the pinned section. Whether a chat is
+    /// pinned comes from the server; the order is this device's.
     var pinnedAt: Date?
     /// The model of the latest reply.
     var model: String = ""
-    var contextLength: Int = OllamaChatRequest.contextLength
     /// Nil for a chat on its own.
     var folder: Folder?
     @Relationship(deleteRule: .cascade, inverse: \Message.chat)
-    var messages: [Message]? = []
+    var messages: [Message] = []
 
-    init(title: String) {
+    init(id: String = Storage.newID(), title: String) {
+        self.id = id
         self.title = title
     }
 
+    /// Changed since it was last read.
+    var isUnread: Bool {
+        updatedAt > (lastReadAt ?? .distantPast)
+    }
+
     /// The chats in the folder with id `folderID`.
-    static func inFolder(_ folderID: UUID) -> Predicate<Chat> {
+    static func inFolder(_ folderID: String) -> Predicate<Chat> {
         #Predicate<Chat> { $0.folder?.id == folderID }
     }
 
     /// The stored messages in order.
     var sortedMessages: [Message] {
-        (messages ?? []).sorted { $0.sequence < $1.sequence }
+        messages.sorted { $0.sequence < $1.sequence }
     }
 }
 
-/// A saved message; `ChatMessage` is its in-memory form.
+/// A saved message, one of the branch on show; `ChatMessage` is its
+/// in-memory form.
 @Model
 final class Message {
-    var id: UUID = UUID()
+    /// The server's id.
+    @Attribute(.unique) var id: String
     var chat: Chat?
     /// `ChatMessage.Role`'s raw value.
     var role: String = ChatMessage.Role.user.rawValue
@@ -156,38 +172,18 @@ final class Message {
     var error: String?
     var promptTokens: Int?
     var outputTokens: Int?
-    /// While a reply streams: when it last got a checkpoint, and the device
-    /// streaming it (`thisDevice`). Nil for anything else.
-    var checkpointAt: Date?
-    var replyDevice: String?
+    /// The message this one answers or follows; nil for the first.
+    var parentId: String?
+    /// Every reply to this message, retried ones included: a retry sends
+    /// them all, or the server drops the earlier ones.
+    var childrenIds: [String] = []
 
-    init(id: UUID) {
+    init(id: String) {
         self.id = id
     }
 
-    /// How often a reply streaming here is saved, tokens or not, so other
-    /// devices see it come in and know it's alive.
-    static let checkpointInterval: TimeInterval = 5
-    /// How long a reply stored streaming counts as still coming without a
-    /// new checkpoint: well past the interval, since sync can lag.
-    static let liveWindow: TimeInterval = 90
-    /// This device, as `replyDevice` names it.
-    static let thisDevice = UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
-
-    /// Whether a reply stored streaming is still coming on another device:
-    /// checkpointed lately, and not by this one (a reply streaming here is
-    /// shown from memory; one stored from here but not running was cut off).
-    func isLiveElsewhere(now: Date = .now) -> Bool {
-        guard status == ChatMessage.Status.streaming.rawValue, let checkpointAt,
-              replyDevice != Self.thisDevice else { return false }
-        return now.timeIntervalSince(checkpointAt) < Self.liveWindow
-    }
-
-    /// Replies stored streaming, live or cut off.
-    static let streaming = #Predicate<Message> { $0.status == "streaming" }
-
     /// The messages of the chat with id `chatID`.
-    static func inChat(_ chatID: UUID) -> Predicate<Message> {
+    static func inChat(_ chatID: String) -> Predicate<Message> {
         #Predicate<Message> { $0.chat?.id == chatID }
     }
 
@@ -204,14 +200,14 @@ final class Message {
         error = message.error
         promptTokens = message.promptTokens
         outputTokens = message.outputTokens
+        parentId = message.parentId
+        childrenIds = message.childrenIds
     }
 }
 
 extension ChatMessage {
-    /// A stored message. A reply stored streaming is still coming only while
-    /// another device keeps checkpointing it; otherwise it was cut off by a
-    /// quit and can't pick up again.
-    init(_ stored: Message, now: Date = .now) {
+    /// A stored message, as stored.
+    init(_ stored: Message) {
         self.init(
             id: stored.id,
             role: Role(rawValue: stored.role) ?? .user,
@@ -224,21 +220,31 @@ extension ChatMessage {
             status: Status(rawValue: stored.status) ?? .done,
             error: stored.error,
             promptTokens: stored.promptTokens,
-            outputTokens: stored.outputTokens
+            outputTokens: stored.outputTokens,
+            parentId: stored.parentId,
+            childrenIds: stored.childrenIds
         )
-        if status == .streaming, !stored.isLiveElsewhere(now: now) {
-            status = .stopped
-        }
     }
 }
 
 enum Storage {
-    static let cloudKitContainer = "iCloud.Teekzilla.Dex"
     static let schema = Schema([Folder.self, Chat.self, Message.self])
 
-    /// The app's store, synced through iCloud.
+    /// A new message, chat or folder id, in the server's form.
+    static func newID() -> String {
+        UUID().uuidString.lowercased()
+    }
+
+    /// Where the cache lives. Named apart from the old iCloud-synced store,
+    /// whose files `removeOldStore` deletes.
+    static var storeURL: URL {
+        URL.applicationSupportDirectory.appending(path: "Dex Cache.store")
+    }
+
+    /// The app's cache, on this device only.
     static let shared: ModelContainer = {
-        let configuration = ModelConfiguration(schema: schema, cloudKitDatabase: .private(cloudKitContainer))
+        removeOldStore()
+        let configuration = ModelConfiguration(schema: schema, url: storeURL, cloudKitDatabase: .none)
         do {
             return try ModelContainer(for: schema, configurations: configuration)
         } catch {
@@ -247,7 +253,17 @@ enum Storage {
         }
     }()
 
-    /// A throwaway store for tests and previews; never synced.
+    /// Deletes the store the iCloud-synced Dex kept, SwiftData's default
+    /// file. Its chats were never on the server; the user cleared them.
+    static func removeOldStore(in directory: URL = .applicationSupportDirectory) {
+        // The store, its journal, and the folders CloudKit mirroring and
+        // external storage kept beside it.
+        for name in ["default.store", "default.store-shm", "default.store-wal", "default_ckAssets", ".default_SUPPORT"] {
+            try? FileManager.default.removeItem(at: directory.appending(path: name))
+        }
+    }
+
+    /// A throwaway store for tests and previews.
     static func inMemory() -> ModelContainer {
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         return try! ModelContainer(for: schema, configurations: configuration)
