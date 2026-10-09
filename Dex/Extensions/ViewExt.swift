@@ -34,6 +34,10 @@ extension View {
     func settingsList() -> some View {
         scrollContentBackground(.hidden)
             .background(Color.surfaceBase.ignoresSafeArea())
+            // Claude's spacing: cards 16pt apart, and 16pt below the bar,
+            // not the system's 35pt (room for section headers Dex doesn't have).
+            .listSectionSpacing(Space.xl)
+            .contentMargins(.top, Space.xl, for: .scrollContent)
     }
     
     /// Rows on settings cards: card fill and divider color.
