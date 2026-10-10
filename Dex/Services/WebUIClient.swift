@@ -78,7 +78,7 @@ struct WebUIClient: Sendable {
     }
 
     /// Download progress through the server's Ollama proxy, until the pull succeeds.
-    func pull(model: String) -> AsyncThrowingStream<OllamaPullProgress, Error> {
+    func pull(model: String) -> AsyncThrowingStream<ModelPullProgress, Error> {
         let client = self
         return AsyncThrowingStream { continuation in
             let task = Task {
@@ -87,7 +87,7 @@ struct WebUIClient: Sendable {
                     let bytes = try await client.stream("ollama/api/pull", body: ["model": model], timeout: 600)
                     var lastStatus: String?
                     for try await line in bytes.lines {
-                        guard let progress = try? JSONDecoder().decode(OllamaPullProgress.self, from: Data(line.utf8)) else { continue }
+                        guard let progress = try? JSONDecoder().decode(ModelPullProgress.self, from: Data(line.utf8)) else { continue }
                         if let error = progress.error { throw Failure.stream(error) }
                         lastStatus = progress.status
                         continuation.yield(progress)

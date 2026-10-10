@@ -29,7 +29,6 @@ final class ServerVM: ObservableObject {
     private var connectTask: Task<Void, Never>?
 
     init() {
-        Self.removeOllamaSettings()
         connect()
     }
 
@@ -83,13 +82,5 @@ final class ServerVM: ObservableObject {
         models.use(nil)
         isReachable = false
         serverStatus = status
-    }
-
-    /// The direct-Ollama settings Dex used before Open WebUI.
-    private static func removeOllamaSettings() {
-        for account in ["ollama.access.id", "ollama.access.secret", "ollama.com.key"] {
-            KeychainService.save("", for: account)
-        }
-        UserDefaults.standard.removeObject(forKey: "serverUrl")
     }
 }

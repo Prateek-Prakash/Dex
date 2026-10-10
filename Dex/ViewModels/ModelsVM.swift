@@ -114,7 +114,7 @@ final class ModelsVM: ObservableObject {
 
     /// "PULLING ABC... 25%" from one line of a pull; the percentage only
     /// once the server reports a size, and never past 100.
-    nonisolated static func pullStatus(_ progress: OllamaPullProgress) -> String {
+    nonisolated static func pullStatus(_ progress: ModelPullProgress) -> String {
         var status = "\((progress.status ?? "").uppercased())..."
         if let completed = progress.completed, let total = progress.total, total > 0 {
             status += " \(min(100, Int(Double(completed) / Double(total) * 100)))%"
