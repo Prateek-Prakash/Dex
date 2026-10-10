@@ -37,8 +37,9 @@ struct LiveMark: View {
                 life: life
             )
         }
-        .frame(width: Self.size * 2, height: Self.size * 2)
-        // Room for the glow to spread, without taking up layout.
+        // Room for the glow to fade out fully, without taking up layout: at
+        // twice the size the blur was cut off, a faint hard edge around it.
+        .frame(width: Self.size * 4, height: Self.size * 4)
         .frame(width: Self.size, height: Self.size)
         .accessibilityHidden(true)
         .onAppear {
@@ -123,11 +124,12 @@ private struct LiveMarkCanvas: View, Animatable {
                 halo.opacity = 0.35 * LiveMark.halo(at: time) * life
                 halo.stroke(circle(center, size / 2 * 0.92), with: color, lineWidth: size * 0.06)
 
-                // The soft glow behind the whole mark.
+                // The soft glow behind the whole mark: one blurred disc, a
+                // single light. Blurring the thin dots and ring left it lumpy.
                 var glow = context
-                glow.addFilter(.blur(radius: size * 0.24))
-                glow.opacity = 0.7 * life
-                draw(in: glow, center: center, with: color)
+                glow.addFilter(.blur(radius: size * 0.28))
+                glow.opacity = 0.3 * life
+                glow.fill(circle(center, size / 2 * 0.8), with: color)
             }
 
             var gray = context
