@@ -1,19 +1,11 @@
 //
-//  OllamaTypes.swift
+//  JSONValue.swift
 //  Dex
 //
 //  Created by Prateek Prakash on 10/6/26.
 //
 
 import Foundation
-
-/// One line of a `/api/pull` stream.
-struct OllamaPullProgress: Decodable, Sendable {
-    let status: String?
-    let total: Int?
-    let completed: Int?
-    let error: String?
-}
 
 /// Any JSON value.
 enum JSONValue: Codable, Sendable, Equatable {

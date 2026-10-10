@@ -26,13 +26,13 @@ struct SupportTests {
     }
 
     @Test(arguments: [
-        (OllamaPullProgress(status: "pulling manifest", total: nil, completed: nil, error: nil), "PULLING MANIFEST..."),
-        (OllamaPullProgress(status: "pulling abc", total: 200, completed: 50, error: nil), "PULLING ABC... 25%"),
-        (OllamaPullProgress(status: "pulling abc", total: 0, completed: 0, error: nil), "PULLING ABC..."),
-        (OllamaPullProgress(status: "pulling abc", total: 100, completed: 120, error: nil), "PULLING ABC... 100%"),
-        (OllamaPullProgress(status: nil, total: nil, completed: nil, error: nil), "..."),
+        (ModelPullProgress(status: "pulling manifest", total: nil, completed: nil, error: nil), "PULLING MANIFEST..."),
+        (ModelPullProgress(status: "pulling abc", total: 200, completed: 50, error: nil), "PULLING ABC... 25%"),
+        (ModelPullProgress(status: "pulling abc", total: 0, completed: 0, error: nil), "PULLING ABC..."),
+        (ModelPullProgress(status: "pulling abc", total: 100, completed: 120, error: nil), "PULLING ABC... 100%"),
+        (ModelPullProgress(status: nil, total: nil, completed: nil, error: nil), "..."),
     ])
-    func pullStatus(_ progress: OllamaPullProgress, _ expected: String) {
+    func pullStatus(_ progress: ModelPullProgress, _ expected: String) {
         #expect(ModelsVM.pullStatus(progress) == expected)
     }
 

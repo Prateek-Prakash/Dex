@@ -284,6 +284,15 @@ struct WebUIModel: Decodable, Sendable, Identifiable, Hashable {
     }
 }
 
+/// One line of a model download, as Ollama streams it through the
+/// server's proxy.
+struct ModelPullProgress: Decodable, Sendable {
+    let status: String?
+    let total: Int?
+    let completed: Int?
+    let error: String?
+}
+
 /// More about a model, from Ollama's `show` through the server's proxy:
 /// what it was built from, by whom, and under which license.
 struct WebUIModelInfo: Decodable, Sendable, Equatable {
