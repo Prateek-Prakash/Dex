@@ -77,3 +77,17 @@ struct SupportTests {
         #expect(ContextMeter.level(share) == expected)
     }
 }
+
+/// Which links open in the in-app browser.
+struct BrowserLinkTests {
+    @Test(arguments: [
+        ("https://bbc.com/weather", true),
+        ("HTTP://example.com", true),
+        ("mailto:me@x.com", false),
+        ("tel:+15551234", false),
+        ("dex://chat/1", false),
+    ])
+    func webPagesOpenInApp(_ text: String, _ inApp: Bool) throws {
+        #expect(BrowserLink.opensInApp(try #require(URL(string: text))) == inApp)
+    }
+}
