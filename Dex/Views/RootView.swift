@@ -38,6 +38,8 @@ struct RootView: View {
     @State private var isHoldingChatUnderRoutes = false
     @State var isDrawerOpen: Bool = false
     @State var showSettingsView: Bool = false
+    /// A web page tapped in a chat, open in the in-app browser.
+    @State private var browserLink: BrowserLink?
     @Environment(\.displayScale) private var displayScale
     /// Plain state, not `@GestureState`: that snaps back to zero, unanimated,
     /// the moment a finger lifts, so the screen jumped home for a frame
@@ -203,6 +205,16 @@ struct RootView: View {
                 .environmentObject(serverVM.models)
                 .presentationBackground(Color.surfaceBase)
         }
+        // Every link tap in Dex: replies, and the sources under a search.
+        .sheet(item: $browserLink) { link in
+            SafariView(url: link.url)
+                .ignoresSafeArea()
+        }
+        .environment(\.openURL, OpenURLAction { url in
+            guard BrowserLink.opensInApp(url) else { return OpenURLAction.Result.systemAction }
+            browserLink = BrowserLink(url: url)
+            return .handled
+        })
     }
 
     /// Leaves a sliver of the main screen showing, like Claude.
