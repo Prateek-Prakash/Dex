@@ -30,6 +30,10 @@ struct ChatTranscriptView: View {
     @State private var isScrollingItself = false
     /// Within reach of the end, by the latest geometry.
     @State private var isNearBottom = true
+    /// The offset now, and where the reader's scroll began: a slow drag
+    /// moves under a point a frame and never counted as going up.
+    @State private var offset: CGFloat = 0
+    @State private var readerStart: CGFloat?
     /// The message pinned to the top: the last one sent here.
     @State private var pinnedID: String?
     /// Each turn's measured height, by its first message: the pinned one's
@@ -115,19 +119,27 @@ struct ChatTranscriptView: View {
             if phase == .interacting {
                 isScrollingItself = false
                 isAligningPin = false
+                readerStart = offset
             }
             guard phase == .idle else { return }
             isScrollingItself = false
+            readerStart = nil
             // The pin's own animation may have aimed short of a room that
             // grew meanwhile (the keyboard going away).
             if isAligningPin, let pinnedID { alignPin(pinnedID) }
             // Growth that came while it was moving.
-            if isFollowing, !isNearBottom { revealEnd() }
+            if isFollowing { revealEnd() }
         }
         // Following: each growth brings the reply's end into view, room
-        // or no room.
+        // or no room. Exactly, not once it's out of reach: waiting for that
+        // left the end up to `nearBottom` short and flashed the arrow.
         .onChange(of: replyEnd) {
-            if isFollowing, !isNearBottom, scrollPhase == .idle { revealEnd() }
+            if isFollowing, scrollPhase == .idle { revealEnd() }
+        }
+        // And as the keyboard comes and goes: the arrow is hidden while
+        // following, so the end can't be left under it.
+        .onChange(of: visibleHeight) {
+            if isFollowing, scrollPhase == .idle { revealEnd() }
         }
         .onScrollGeometryChange(for: TranscriptScroll.self) { geometry in
             TranscriptScroll(
@@ -145,9 +157,13 @@ struct ChatTranscriptView: View {
             viewportHeight = max(viewportHeight, new.container)
             contentHeight = new.content
             visibleHeight = new.visible
-            // The reader's scroll up (a drag, a fling, a status bar tap).
-            if TranscriptLayout.stopsFollowing(from: old.offset, to: new.offset,
-                                               isReaderScrolling: scrollPhase != .idle && !isScrollingItself) {
+            offset = new.offset
+            // The reader's scroll up (a drag, a fling, a status bar tap),
+            // frame to frame or since the drag began.
+            let isReaderScrolling = scrollPhase != .idle && !isScrollingItself
+            if TranscriptLayout.stopsFollowing(from: old.offset, to: new.offset, isReaderScrolling: isReaderScrolling)
+                || TranscriptLayout.stopsFollowing(from: readerStart ?? new.offset, to: new.offset,
+                                                   isReaderScrolling: isReaderScrolling) {
                 isFollowing = false
             }
         }
@@ -176,8 +192,8 @@ struct ChatTranscriptView: View {
             if let target = TranscriptLayout.pinTarget(chatVM.messages) { pin(target) }
         }
         .overlay(alignment: .bottom) {
-            // Whenever the end is out of view.
-            if !isNearBottom {
+            // Whenever the end is out of view and not being followed.
+            if TranscriptLayout.showsJumpArrow(isNearBottom: isNearBottom, isFollowing: isFollowing) {
                 Button(action: follow) {
                     IconlyIcon(.arrowDown, .field)
                         .padding(Space.m)
@@ -278,6 +294,13 @@ enum TranscriptLayout {
     /// is hidden.
     static func isAtBottom(visibleMaxY: CGFloat, bottomInset: CGFloat, contentHeight: CGFloat) -> Bool {
         visibleMaxY - bottomInset >= contentHeight - nearBottom
+    }
+
+    /// The jump arrow: the end out of view, and not on its way there.
+    /// While following, growth hides the end for a frame; that's no reason
+    /// to offer it.
+    static func showsJumpArrow(isNearBottom: Bool, isFollowing: Bool) -> Bool {
+        !isNearBottom && !isFollowing
     }
 
     /// Whether a scroll stops following: the reader's, and upward.

@@ -609,4 +609,11 @@ struct TranscriptLayoutTests {
         // Growth, or this view's own scroll, never does.
         #expect(!TranscriptLayout.stopsFollowing(from: 500, to: 480, isReaderScrolling: false))
     }
+
+    @Test func theJumpArrowHidesWhileFollowing() {
+        #expect(TranscriptLayout.showsJumpArrow(isNearBottom: false, isFollowing: false))
+        // Growth outrunning the follow for a frame: no flash.
+        #expect(!TranscriptLayout.showsJumpArrow(isNearBottom: false, isFollowing: true))
+        #expect(!TranscriptLayout.showsJumpArrow(isNearBottom: true, isFollowing: false))
+    }
 }
