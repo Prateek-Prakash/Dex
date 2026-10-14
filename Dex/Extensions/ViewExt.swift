@@ -30,6 +30,16 @@ extension View {
         }
     }
     
+    /// A capsule Liquid Glass button surface, or a material one before iOS 26.
+    @ViewBuilder
+    func glassCapsule() -> some View {
+        if #available(iOS 26.0, *) {
+            glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            background(.ultraThinMaterial, in: Capsule())
+        }
+    }
+
     /// A settings list's own background, in place of the system one.
     func settingsList() -> some View {
         scrollContentBackground(.hidden)

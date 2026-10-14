@@ -106,6 +106,8 @@ struct WebUIMessage: Decodable, Sendable, Identifiable {
     let error: String?
     /// Stopped in Dex, which saved what showed of it.
     let isStopped: Bool
+    /// What the server added on its own: a sub-agent's result or a timer.
+    let notice: AgentNotice?
 
     /// Dex's mark on a reply it stopped.
     static let stoppedKey = "dex_stopped"
@@ -113,6 +115,17 @@ struct WebUIMessage: Decodable, Sendable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, parentId, childrenIds, role, content, done, model, timestamp, usage, output, error
         case isStopped = "dex_stopped"
+        case meta
+    }
+
+    /// An internal message's marks.
+    private struct Meta: Decodable {
+        let isInternal: Bool?
+        let type: String?
+        enum CodingKeys: String, CodingKey {
+            case type
+            case isInternal = "internal"
+        }
     }
 
     /// `error` is `{"content": "…"}`, or a bare string.
@@ -131,6 +144,12 @@ struct WebUIMessage: Decodable, Sendable, Identifiable {
         usage = try container.decodeIfPresent(WebUIUsage.self, forKey: .usage)
         output = try container.decodeIfPresent([WebUIOutputItem].self, forKey: .output)
         isStopped = (try? container.decodeIfPresent(Bool.self, forKey: .isStopped)) ?? false
+        if let meta = (try? container.decodeIfPresent(Meta.self, forKey: .meta)) ?? nil, meta.isInternal == true {
+            let kind = AgentNotice.Kind(rawValue: meta.type ?? "") ?? .subagent
+            notice = AgentNotice(kind: kind, results: kind == .subagent ? AgentNotice.results(in: content) : [])
+        } else {
+            notice = nil
+        }
         if let body = try? container.decodeIfPresent(ErrorBody.self, forKey: .error) {
             error = body.content ?? "The reply failed"
         } else {

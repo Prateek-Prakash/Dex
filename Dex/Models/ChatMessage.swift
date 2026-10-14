@@ -24,6 +24,14 @@ struct ChatMessage: Identifiable, Equatable, Sendable {
     var thinking: String?
     /// The web searches and page reads behind a reply, without their text.
     var lookups: [WebLookup]?
+    /// The sub-agents a reply started, as it left them; background results
+    /// are matched in by `SubAgentBoard`.
+    var agents: [SubAgent]?
+    /// The checklist as a reply left it.
+    var tasks: [AgentTask]?
+    /// Set on a message the server added on its own (a sub-agent's result,
+    /// a timer): shown as a marker, not as the user's bubble.
+    var notice: AgentNotice?
     var createdAt = Date()
     /// Order within the chat; breaks ties between equal timestamps.
     var sequence: Int

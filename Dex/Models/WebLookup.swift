@@ -97,6 +97,11 @@ struct ReplyParts: Equatable, Sendable {
     private(set) var lookups: [WebLookup] = []
     /// Which lookup each tool call made.
     private var callIndex: [String: Int] = [:]
+    private(set) var agents: [SubAgent] = []
+    /// The checklist as the reply last wrote it.
+    private(set) var tasks: [AgentTask]?
+    /// Tool calls by id, for their output: checklist calls, so far.
+    private var callNames: [String: String] = [:]
 
     init() {}
 
@@ -123,6 +128,7 @@ struct ReplyParts: Equatable, Sendable {
 
     static func == (lhs: ReplyParts, rhs: ReplyParts) -> Bool {
         lhs.content == rhs.content && lhs.thinking == rhs.thinking && lhs.lookups == rhs.lookups
+            && lhs.agents == rhs.agents && lhs.tasks == rhs.tasks
     }
 
     mutating func appendText(_ delta: String) {
@@ -150,6 +156,17 @@ struct ReplyParts: Equatable, Sendable {
                 thoughts.append((id, text))
             }
         case .functionCall(_, let callID, let name, let arguments):
+            callNames[callID] = name
+            if let agent = SubAgent(callID: callID, name: name, arguments: arguments) {
+                // Started with empty arguments; the task comes once it's done.
+                if let index = agents.firstIndex(where: { $0.callID == callID }) {
+                    if !agent.task.isEmpty { agents[index].task = agent.task }
+                    agents[index].isBackground = agents[index].isBackground || agent.isBackground
+                } else {
+                    agents.append(agent)
+                }
+                return
+            }
             // Started with empty arguments; the subject comes once it's done.
             guard let lookup = WebLookup(name: name, arguments: arguments) else { return }
             if let index = callIndex[callID] {
@@ -159,10 +176,26 @@ struct ReplyParts: Equatable, Sendable {
                 lookups.append(lookup)
             }
         case .functionCallOutput(let callID, let text):
-            guard let index = callIndex[callID] else { return }
-            lookups[index].finish(output: text)
+            if let index = agents.firstIndex(where: { $0.callID == callID }) {
+                agents[index].finish(output: text)
+            } else if let name = callNames[callID], AgentTask.toolNames.contains(name) {
+                if let list = AgentTask.list(output: text) { tasks = list }
+            } else if let index = callIndex[callID] {
+                lookups[index].finish(output: text)
+            }
         case .message, .other:
             break
         }
+    }
+}
+
+extension ReplyParts {
+    /// Writes what the reply has so far into `message`.
+    func apply(to message: inout ChatMessage) {
+        message.content = content
+        message.thinking = thinking
+        message.lookups = lookups.isEmpty ? nil : lookups
+        message.agents = agents.isEmpty ? nil : agents
+        message.tasks = tasks
     }
 }

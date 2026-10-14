@@ -19,6 +19,7 @@ import SwiftUI
 /// space.
 struct ChatTranscriptView: View {
     @EnvironmentObject var chatVM: ChatVM
+    @Environment(\.showSubAgents) private var showSubAgents
 
     /// Keeps the end in view: set by the jump arrow only, cleared by the
     /// reader's own scroll up.
@@ -75,6 +76,11 @@ struct ChatTranscriptView: View {
     }
 
     var body: some View {
+        // Each reply's sub-agents with their background results taken in,
+        // and the checklist, shown once, in the reply that started it.
+        let agents = SubAgentBoard.agents(in: chatVM.messages)
+        let tasks = SubAgentBoard.tasks(in: chatVM.messages)
+        let checklistReply = chatVM.messages.first { $0.tasks != nil }?.id
         ScrollView {
             // Turns xxxl apart: m between them plus each one's own xl on top.
             VStack(alignment: .leading, spacing: Space.m) {
@@ -83,9 +89,16 @@ struct ChatTranscriptView: View {
                         ForEach(turn) { message in
                             switch message.role {
                             case .user, .system:
-                                UserBubble(text: message.content)
+                                if let notice = message.notice {
+                                    NoticeMarker(notice: notice) {
+                                        showSubAgents(Self.selection(for: notice, agents: agents, messages: chatVM.messages))
+                                    }
+                                } else {
+                                    UserBubble(text: message.content)
+                                }
                             case .assistant:
-                                ReplyView(message: message, isLast: message.id == chatVM.messages.last?.id)
+                                ReplyView(message: message, isLast: message.id == chatVM.messages.last?.id,
+                                          agents: agents[message.id], tasks: message.id == checklistReply ? tasks : nil)
                             }
                         }
                     }
@@ -235,6 +248,22 @@ struct ChatTranscriptView: View {
 
     private static let content = "transcriptContent"
 
+    /// A result marker's sub-agents, as their replies left them; one whose
+    /// reply isn't on this branch is shown from the result alone.
+    static func selection(for notice: AgentNotice, agents: [String: [SubAgent]], messages: [ChatMessage]) -> SubAgentSelection {
+        let items = notice.results.map { result in
+            for message in messages {
+                if let agent = agents[message.id]?.first(where: { $0.delegationID == result.delegationID }) {
+                    return SubAgentItem(agent: agent, startedAt: message.createdAt, model: message.model)
+                }
+            }
+            var agent = SubAgent(callID: result.delegationID, task: "", isBackground: true, delegationID: result.delegationID)
+            agent.take(result)
+            return SubAgentItem(agent: agent, startedAt: .now, model: nil)
+        }
+        return SubAgentSelection(items: items, index: 0)
+    }
+
     /// Brings the pinned message back to the top, gliding, never popping.
     private func alignPin(_ id: String) {
         withAnimation(.easeOut(duration: 0.25)) {
@@ -331,6 +360,7 @@ private struct UserBubble: View {
 
     var body: some View {
         HStack {
+            // spacing: the bubble keeps this much of the line free on its left, like Claude
             Spacer(minLength: 48.0)
             Text(text)
                 .padding(.horizontal, Space.xl)
@@ -350,6 +380,10 @@ private struct ReplyView: View {
 
     let message: ChatMessage
     let isLast: Bool
+    /// Its sub-agents, background results taken in.
+    var agents: [SubAgent]?
+    /// The chat's checklist, in the reply that started it.
+    var tasks: [AgentTask]?
 
     @State private var showsThinking: Bool = false
     @State private var showsLookups: Bool = false
@@ -361,6 +395,12 @@ private struct ReplyView: View {
             }
             if let lookups = message.lookups {
                 lookupsSection(lookups)
+            }
+            if let tasks, !tasks.isEmpty {
+                TaskChecklist(tasks: tasks)
+            }
+            if let agents, !agents.isEmpty {
+                AgentsSection(agents: agents, startedAt: message.createdAt, model: message.model)
             }
             if !message.content.isEmpty {
                 ChatMarkdownView(text: message.content)

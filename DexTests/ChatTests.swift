@@ -396,6 +396,95 @@ extension StubbedNetworkTests {
             #expect(server.readChats.contains("c7"))
         }
 
+        @Test func turnsTheServerAddsAreTakenInAndFollowedLive() async throws {
+            let (vm, server, context) = Self.vm()
+            let chat = Chat(id: "c20", title: "Compare")
+            context.insert(chat)
+            try context.save()
+            server.state.setChat("c20", FakeServer.chatJSON(id: "c20", title: "Compare", updatedAt: 10, messages: [
+                ("u", "user", "Compare", nil), ("a", "assistant", "Started two sub-agents.", true),
+            ]))
+            vm.open(chat)
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(vm.messages.map(\.id) == ["u", "a"])
+
+            // A background result lands: the server adds it and starts a reply.
+            let result = String(decoding: try JSONEncoder().encode(SubAgentTests.resultText("deleg_1")), as: UTF8.self)
+            server.state.setChat("c20", #"{"id":"c20","title":"Compare","pinned":false,"updated_at":20,"created_at":1,"chat":{"history":{"currentId":"a2","messages":{"#
+                + #""u":{"id":"u","parentId":null,"childrenIds":["a"],"role":"user","content":"Compare","timestamp":1},"#
+                + #""a":{"id":"a","parentId":"u","childrenIds":["n"],"role":"assistant","content":"Started two sub-agents.","done":true,"timestamp":1},"#
+                + #""n":{"id":"n","parentId":"a","childrenIds":["a2"],"role":"user","content":\#(result),"meta":{"internal":true,"type":"subagent","delegation_id":"deleg_1"},"timestamp":2},"#
+                + #""a2":{"id":"a2","parentId":"n","childrenIds":[],"role":"assistant","content":"","done":false,"timestamp":2}}}}}"#)
+            server.send(.reload(chatID: "c20", messageID: "a2"))
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(vm.messages.map(\.id) == ["u", "a", "n", "a2"])
+            #expect(vm.messages[2].notice?.results.first?.delegationID == "deleg_1")
+            #expect(vm.messages.last?.status == .streaming)
+
+            // It streams here, like a reply sent from here.
+            server.send(.text(chatID: "c20", messageID: "a2", delta: "Battery is in."))
+            server.send(.finished(chatID: "c20", messageID: "a2", output: [.message(id: "m", text: "Battery is in.")], usage: nil))
+            #expect(vm.messages.last?.content == "Battery is in.")
+            #expect(vm.messages.last?.status == .done)
+
+            // The next question answers the server's latest reply, not the old one.
+            await Self.send("Thanks", vm)
+            #expect(server.lastReply?["parent_id"] as? String == "a2")
+        }
+
+        @Test func aServerReplyThatStreamsWhileTheChatIsReadKeepsEveryPart() async throws {
+            let (vm, server, context) = Self.vm()
+            let chat = Chat(id: "c21", title: "Compare")
+            context.insert(chat)
+            try context.save()
+            server.state.setChat("c21", FakeServer.chatJSON(id: "c21", title: "Compare", updatedAt: 10, messages: [
+                ("u", "user", "Compare", nil), ("a", "assistant", "Started.", true),
+            ]))
+            vm.open(chat)
+            try await Task.sleep(for: .milliseconds(100))
+            server.state.setChat("c21", FakeServer.chatJSON(id: "c21", title: "Compare", updatedAt: 20, messages: [
+                ("u", "user", "Compare", nil), ("a", "assistant", "Started.", true),
+                ("n", "user", "Result", nil), ("a2", "assistant", "", false),
+            ]))
+            // The reply streams, and even ends, before the chat is read again.
+            server.send(.reload(chatID: "c21", messageID: "a2"))
+            server.send(.text(chatID: "c21", messageID: "a2", delta: "Both "))
+            server.send(.text(chatID: "c21", messageID: "a2", delta: "are in."))
+            server.send(.finished(chatID: "c21", messageID: "a2", output: [.message(id: "m", text: "Both are in.")],
+                                  usage: WebUIUsage(promptTokens: 40, completionTokens: 4)))
+            try await Task.sleep(for: .milliseconds(150))
+            #expect(vm.messages.last?.id == "a2")
+            #expect(vm.messages.last?.content == "Both are in.")
+            #expect(vm.messages.last?.status == .done)
+            #expect(vm.messages.last?.promptTokens == 40)
+            #expect(!vm.isStreaming)
+        }
+
+        @Test func aServerReplyStillStreamingAfterTheReadGoesOnLive() async throws {
+            let (vm, server, context) = Self.vm()
+            let chat = Chat(id: "c22", title: "Compare")
+            context.insert(chat)
+            try context.save()
+            server.state.setChat("c22", FakeServer.chatJSON(id: "c22", title: "Compare", updatedAt: 10, messages: [
+                ("u", "user", "Compare", nil), ("a", "assistant", "Started.", true),
+            ]))
+            vm.open(chat)
+            try await Task.sleep(for: .milliseconds(100))
+            server.state.setChat("c22", FakeServer.chatJSON(id: "c22", title: "Compare", updatedAt: 20, messages: [
+                ("u", "user", "Compare", nil), ("a", "assistant", "Started.", true),
+                ("n", "user", "Result", nil), ("a2", "assistant", "", false),
+            ]))
+            server.send(.reload(chatID: "c22", messageID: "a2"))
+            server.send(.text(chatID: "c22", messageID: "a2", delta: "Both "))
+            try await Task.sleep(for: .milliseconds(150))
+            // What came during the read shows, and the rest follows it.
+            #expect(vm.messages.last?.content == "Both ")
+            server.send(.text(chatID: "c22", messageID: "a2", delta: "are in."))
+            server.send(.finished(chatID: "c22", messageID: "a2", output: [.message(id: "m", text: "Both are in.")], usage: nil))
+            #expect(vm.messages.last?.content == "Both are in.")
+            #expect(vm.messages.last?.status == .done)
+        }
+
         @Test func openingTakesTheServersCopy() async throws {
             let (vm, server, context) = Self.vm()
             let chat = Chat(id: "c8", title: "Mine")

@@ -58,6 +58,14 @@ struct TileRow: View {
 
 extension View {
     /// A `TileRow`'s place in a plain list: no separator or background.
+    /// A plain list of tile rows: its first row's content starts the same
+    /// 16pt under the title bar as every screen's (the row's own top inset
+    /// counts toward it).
+    func tileList() -> some View {
+        listStyle(.plain)
+            .contentMargins(.top, Space.xl - TileRow.insets.top, for: .scrollContent)
+    }
+
     func tileRowInList() -> some View {
         listRowSeparator(.hidden)
             .listRowInsets(TileRow.insets)

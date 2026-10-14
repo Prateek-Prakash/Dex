@@ -36,6 +36,8 @@ struct ContentView: View {
     @State private var chatToRename: Chat?
     @State private var chatToDelete: Chat?
     @State private var chatToOrganize: Chat?
+    /// The sub-agents whose detail sheet is up.
+    @State private var subAgentSelection: SubAgentSelection?
     
     var body: some View {
         Group {
@@ -145,7 +147,29 @@ struct ContentView: View {
         .navigationTitle(chatVM.isIncognito ? "Incognito" : "")
         .toolbarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
-            ComposerView(isFocused: $isComposerFocused)
+            VStack(spacing: Space.m) {
+                // Background sub-agents still working in this chat.
+                let running = SubAgentBoard.running(in: chatVM.messages)
+                if !running.isEmpty {
+                    AgentsPill(count: running.count) {
+                        let items = running.map { SubAgentItem(agent: $0.agent, startedAt: $0.startedAt, model: $0.model) }
+                        subAgentSelection = SubAgentSelection(items: items, index: 0)
+                    }
+                    .transition(.opacity)
+                }
+                ComposerView(isFocused: $isComposerFocused)
+            }
+            .animation(.easeOut(duration: 0.2), value: SubAgentBoard.running(in: chatVM.messages).count)
+        }
+        .environment(\.showSubAgents) { subAgentSelection = $0 }
+        .sheet(item: $subAgentSelection) { selection in
+            SubAgentSheet(selection: selection)
+                .environmentObject(chatVM)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                // A scroll moves the content at either height; the grabber resizes.
+                .presentationContentInteraction(.scrolls)
+                .presentationBackground(Color.surfaceBase)
         }
         // Pushed: its own chat on screen each time it shows, coming back
         // from a page pushed over it included.
@@ -218,7 +242,7 @@ struct ContentView: View {
                     .contentTransition(.opacity)
             }
         }
-        .padding()
+        .padding(Space.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Tap anywhere above the message box to put the keyboard away.
         .contentShape(Rectangle())

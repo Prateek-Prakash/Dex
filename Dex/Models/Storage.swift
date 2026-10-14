@@ -148,6 +148,10 @@ final class Message {
     var thinking: String?
     /// `ChatMessage.lookups` as JSON.
     var lookups: String?
+    /// `ChatMessage.agents`, `tasks` and `notice` as JSON.
+    var agents: String?
+    var tasks: String?
+    var notice: String?
     var createdAt: Date = Date()
     var sequence: Int = 0
     var model: String?
@@ -166,6 +170,10 @@ final class Message {
         self.id = id
     }
 
+    private static func json<T: Encodable>(_ value: T?) -> String? {
+        value.flatMap { try? JSONEncoder().encode($0) }.map { String(decoding: $0, as: UTF8.self) }
+    }
+
     /// The messages of the chat with id `chatID`.
     static func inChat(_ chatID: String) -> Predicate<Message> {
         #Predicate<Message> { $0.chat?.id == chatID }
@@ -176,7 +184,10 @@ final class Message {
         role = message.role.rawValue
         content = message.content
         thinking = message.thinking
-        lookups = message.lookups.flatMap { try? JSONEncoder().encode($0) }.map { String(decoding: $0, as: UTF8.self) }
+        lookups = Self.json(message.lookups)
+        agents = Self.json(message.agents)
+        tasks = Self.json(message.tasks)
+        notice = Self.json(message.notice)
         createdAt = message.createdAt
         sequence = message.sequence
         model = message.model
@@ -197,7 +208,10 @@ extension ChatMessage {
             role: Role(rawValue: stored.role) ?? .user,
             content: stored.content,
             thinking: stored.thinking,
-            lookups: stored.lookups.flatMap { try? JSONDecoder().decode([WebLookup].self, from: Data($0.utf8)) },
+            lookups: Self.decode(stored.lookups),
+            agents: Self.decode(stored.agents),
+            tasks: Self.decode(stored.tasks),
+            notice: Self.decode(stored.notice),
             createdAt: stored.createdAt,
             sequence: stored.sequence,
             model: stored.model,
@@ -208,6 +222,10 @@ extension ChatMessage {
             parentId: stored.parentId,
             childrenIds: stored.childrenIds
         )
+    }
+
+    private static func decode<T: Decodable>(_ json: String?) -> T? {
+        json.flatMap { try? JSONDecoder().decode(T.self, from: Data($0.utf8)) }
     }
 }
 
