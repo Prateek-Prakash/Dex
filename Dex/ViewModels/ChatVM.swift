@@ -45,6 +45,12 @@ private final class ChatSession {
     /// The chat's id for the server: a saved chat's own, or an incognito
     /// one's temporary id.
     var serverChatID: String?
+    /// A reply the server started on its own, named by a reload: its live
+    /// events are kept here while the chat is read again, so none is lost,
+    /// and how it ended, if it did meanwhile.
+    var adopting: String?
+    var adoptedParts = ReplyParts()
+    var adoptedEnd: (status: ChatMessage.Status, error: String?, usage: WebUIUsage?)?
 
     init(isIncognito: Bool) {
         self.isIncognito = isIncognito
@@ -78,6 +84,9 @@ final class ChatVM: ObservableObject {
     @Published private(set) var chat: Chat?
     /// Saved chats with a reply coming, on screen or not.
     @Published private(set) var streamingChatIDs: Set<String> = []
+    /// What each running background sub-agent on screen is doing, by its
+    /// hidden chat's id, from the live channel.
+    @Published private(set) var agentSteps: [String: AgentSteps] = [:]
     /// Where chats are saved; nil keeps everything in memory (previews).
     var context: ModelContext?
     /// The server replies run on; nil while none is set up.
@@ -636,6 +645,10 @@ final class ChatVM: ObservableObject {
         func replying(_ messageID: String) -> ChatSession? {
             sessions.first { $0.replyID == messageID && $0.isLive }
         }
+        // A reply announced by a reload, before the chat is read again: kept for it.
+        if let messageID = event.messageID, let session = sessions.first(where: { $0.adopting == messageID }) {
+            return keep(event, for: session)
+        }
         switch event {
         case .text(_, let messageID, let delta):
             guard let session = replying(messageID) else { return }
@@ -645,13 +658,17 @@ final class ChatVM: ObservableObject {
             guard let session = replying(messageID) else { return }
             session.parts.appendThought(delta, itemID: itemID)
             show(messageID, in: session)
-        case .item(_, let messageID, let item, let isDone):
-            guard let session = replying(messageID) else { return }
+        case .item(let chatID, let messageID, let item, let isDone):
+            guard let session = replying(messageID) else { return agentStep(chatID, item, isDone: isDone) }
             session.parts.apply(item, isDone: isDone)
             // Steps are few, and a lookup row should show at once.
             show(messageID, in: session, now: true)
-        case .finished(_, let messageID, let output, let usage):
-            guard let session = replying(messageID) else { return }
+        case .finished(let chatID, let messageID, let output, let usage):
+            guard let session = replying(messageID) else {
+                // A sub-agent's hidden chat finished: its steps, whole.
+                if agentSteps[chatID] != nil { agentSteps[chatID] = AgentSteps(output: output) }
+                return
+            }
             let parts = ReplyParts(output: output, fallback: session.parts.content)
             session.parts = parts
             update(messageID, in: session) {
@@ -676,6 +693,8 @@ final class ChatVM: ObservableObject {
             }
         case .listChanged:
             Task { await refreshList() }
+        case .reload(let chatID, let messageID):
+            reload(chatID, messageID: messageID)
         case .active(let chatID, let isActive):
             activity(chatID, isActive)
         case .cancelled(_, let messageID):
@@ -705,6 +724,68 @@ final class ChatVM: ObservableObject {
         commit()
     }
 
+    /// The server added to a chat on its own: a background sub-agent's
+    /// result, and the reply it starts. A chat open here takes them in and
+    /// follows that reply live (it streams to this session too); one that
+    /// isn't gets its unread dot from the list.
+    private func reload(_ chatID: String, messageID: String) {
+        let sessions = ([current] + background).compactMap { $0 }.filter { $0.chat?.id == chatID }
+        guard !sessions.isEmpty else {
+            Task { await refreshList() }
+            return
+        }
+        for session in sessions where !session.isReplying {
+            session.adopting = messageID
+            session.adoptedParts = ReplyParts()
+            session.adoptedEnd = nil
+            sync(session, isLive: true)
+        }
+    }
+
+    /// An event for a reply being taken up after a reload, kept until the
+    /// chat is read again.
+    private func keep(_ event: WebUIEvent, for session: ChatSession) {
+        switch event {
+        case .text(_, _, let delta):
+            session.adoptedParts.appendText(delta)
+        case .reasoning(_, _, let itemID, let delta):
+            session.adoptedParts.appendThought(delta, itemID: itemID)
+        case .item(_, _, let item, let isDone):
+            session.adoptedParts.apply(item, isDone: isDone)
+        case .finished(_, _, let output, let usage):
+            session.adoptedParts = ReplyParts(output: output, fallback: session.adoptedParts.content)
+            session.adoptedEnd = session.adoptedParts.content.isEmpty
+                ? (.failed, "No answer came back.", usage) : (.done, nil, usage)
+        case .failed(_, _, let message):
+            session.adoptedEnd = (.failed, message, nil)
+        case .cancelled:
+            session.adoptedEnd = (.stopped, nil, nil)
+        default:
+            break
+        }
+    }
+
+    /// A step of a running sub-agent on screen, from its hidden chat's events.
+    private func agentStep(_ chatID: String, _ item: WebUIOutputItem, isDone: Bool) {
+        guard SubAgentBoard.running(in: messages).contains(where: { $0.agent.chatID == chatID }) else { return }
+        agentSteps[chatID, default: AgentSteps()].apply(item, isDone: isDone)
+    }
+
+    /// A sub-agent's hidden chat as saved: its steps and answer so far, and
+    /// whether it finished. Nil if it can't be read.
+    func agentDetail(chatID: String) async -> (steps: AgentSteps, isDone: Bool)? {
+        guard let client = server?.client, let remote = try? await client.chat(id: chatID) else { return nil }
+        guard let reply = remote.chat.history.currentBranch.last(where: { $0.role == "assistant" }) else {
+            return (AgentSteps(), false)
+        }
+        let steps = AgentSteps(output: reply.output ?? [])
+        // Live steps may be ahead of what's saved mid-run.
+        if reply.done != true, let live = agentSteps[chatID], live.steps.count > steps.steps.count {
+            return (live, false)
+        }
+        return (steps, reply.done == true)
+    }
+
     /// A reply started or stopped in a chat, here or in the web UI. Started:
     /// its spinner shows at once. Stopped: the list is fetched, for the
     /// chat's new time (its unread dot) and title, or the chat itself if
@@ -715,6 +796,20 @@ final class ChatVM: ObservableObject {
         if let chat = cachedChat(chatID), chat.isActive != isActive {
             chat.isActive = isActive
             commit()
+        }
+        // A reply taken up live after a reload that never sent its end here:
+        // read it from the server instead.
+        if !isActive {
+            for session in ([current] + background).compactMap({ $0 })
+            where session.chat?.id == chatID && session.isReplying && session.isLive && session.task == nil {
+                let id = session.replyID
+                Task {
+                    try? await Task.sleep(for: .seconds(2))
+                    guard session.replyID == id, session.isLive, session.task == nil else { return }
+                    session.isLive = false
+                    follow(session)
+                }
+            }
         }
         if !isActive || cachedChat(chatID) == nil {
             Task { await refreshList() }
@@ -748,6 +843,8 @@ final class ChatVM: ObservableObject {
                             $0.content = fresh.content
                             $0.thinking = fresh.thinking
                             $0.lookups = fresh.lookups
+                            $0.agents = fresh.agents
+                            $0.tasks = fresh.tasks
                             $0.promptTokens = fresh.promptTokens
                             $0.outputTokens = fresh.outputTokens
                         }
@@ -777,8 +874,10 @@ final class ChatVM: ObservableObject {
     }
 
     /// Replaces a saved chat's stored messages with the server's, if they
-    /// changed, unless a reply is coming here.
-    private func sync(_ session: ChatSession) {
+    /// changed, unless a reply is coming here. A reply still running on the
+    /// server is followed: live when `isLive` (the live channel carries it),
+    /// otherwise by reading the saved chat.
+    private func sync(_ session: ChatSession, isLive: Bool = false) {
         guard let server, let chat = session.chat, let context else { return }
         let chatID = chat.id
         Task {
@@ -802,9 +901,29 @@ final class ChatVM: ObservableObject {
             commit()
             session.records = Dictionary(chat.messages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             session.messages = chat.sortedMessages.map { ChatMessage($0) }
+            let adopting = session.adopting
+            session.adopting = nil
             if let reply = session.messages.last, reply.role == .assistant, reply.status == .streaming {
                 session.replyID = reply.id
-                follow(session)
+                if isLive, reply.id == adopting {
+                    // Live from here, with what came while the chat was read.
+                    session.server = server
+                    session.isLive = true
+                    session.parts = session.adoptedParts
+                    if let end = session.adoptedEnd {
+                        update(reply.id, in: session) {
+                            Self.apply(session.parts, to: &$0)
+                            $0.promptTokens = end.usage?.promptTokens
+                            $0.outputTokens = end.usage?.completionTokens
+                        }
+                        finish(reply.id, in: session, status: end.status, error: end.error)
+                    } else {
+                        show(reply.id, in: session, now: true)
+                    }
+                } else {
+                    // Not the reply the reload named (or not live): read it from the server.
+                    follow(session)
+                }
             }
             // On screen, what came in is read.
             if session === current { markRead(session) }
@@ -825,9 +944,7 @@ final class ChatVM: ObservableObject {
     }
 
     private static func apply(_ parts: ReplyParts, to message: inout ChatMessage) {
-        message.content = parts.content
-        message.thinking = parts.thinking
-        message.lookups = parts.lookups.isEmpty ? nil : parts.lookups
+        parts.apply(to: &message)
     }
 
     /// Shows the reply as built so far, at most 20 times a second unless
@@ -878,6 +995,7 @@ final class ChatVM: ObservableObject {
     /// Clears the screen. A saved chat's reply keeps going; an incognito
     /// one stops, saved nowhere.
     private func leave() {
+        agentSteps = [:]
         guard let session = current else { return }
         current = nil
         if session.isReplying {

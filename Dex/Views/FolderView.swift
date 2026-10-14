@@ -70,7 +70,7 @@ struct FolderView: View {
                 }
                 .tileRowInList()
             }
-            .listStyle(.plain)
+            .tileList()
             .scrollContentBackground(.hidden)
         } actions: {
             if let folder {

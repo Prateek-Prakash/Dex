@@ -33,7 +33,7 @@ struct OrganizeView: View {
                 .buttonStyle(.plain)
                 .tileRowInList()
             }
-            .listStyle(.plain)
+            .tileList()
             .scrollContentBackground(.hidden)
             .background(Color.surfaceBase.ignoresSafeArea())
             .sensoryFeedback(.selection, trigger: chat.folder?.id)

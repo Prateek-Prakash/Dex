@@ -29,12 +29,10 @@ enum CacheSync {
             parentId: remote.parentId,
             childrenIds: remote.childrenIds
         )
+        message.notice = remote.notice
         guard role == .assistant else { return message }
         if let output = remote.output {
-            let parts = ReplyParts(output: output, fallback: remote.content)
-            message.content = parts.content
-            message.thinking = parts.thinking
-            message.lookups = parts.lookups.isEmpty ? nil : parts.lookups
+            ReplyParts(output: output, fallback: remote.content).apply(to: &message)
         }
         if let error = remote.error {
             message.status = .failed

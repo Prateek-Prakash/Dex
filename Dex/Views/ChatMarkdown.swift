@@ -380,6 +380,9 @@ struct ChatMarkdownView: View, Equatable {
     // Formulas are images drawn at a point size: these follow Dynamic Type
     // with the text styles their blocks use.
     @ScaledMetric(relativeTo: .body) private var bodySize: CGFloat = 17.0
+    /// How far each nested list level steps in: a marker's width (16) and a
+    /// little, so nested text clears its parent's marker. Not a Space step.
+    static let listIndent: CGFloat = 18.0
     @ScaledMetric(relativeTo: .title3) private var title3Size: CGFloat = 20.0
     @ScaledMetric(relativeTo: .subheadline) private var subheadlineSize: CGFloat = 15.0
 
@@ -425,13 +428,13 @@ struct ChatMarkdownView: View, Equatable {
                     .frame(minWidth: 16.0, alignment: .trailing)
                 line(text, size: bodySize)
             }
-            .padding(.leading, CGFloat(depth - 1) * 18.0)
+            .padding(.leading, CGFloat(depth - 1) * Self.listIndent)
         case .task(let checked, let depth, let text):
             HStack(alignment: .firstTextBaseline, spacing: Space.m) {
                 TaskBox(isChecked: checked, size: bodySize)
                 line(text, size: bodySize)
             }
-            .padding(.leading, CGFloat(depth - 1) * 18.0)
+            .padding(.leading, CGFloat(depth - 1) * Self.listIndent)
             .accessibilityElement(children: .combine)
             .accessibilityValue(checked ? "Done" : "Not Done")
         case .quote(let text):
@@ -622,12 +625,16 @@ enum CodeColoring {
 /// A task list's checkbox, drawn rather than an icon: a rounded square,
 /// filled with a check when done. Sized to the text, its bottom on the
 /// text's baseline.
-private struct TaskBox: View {
+/// A task list's checkbox, sized from its text; also the sub-agent checklist's.
+struct TaskBox: View {
     let isChecked: Bool
     let size: CGFloat
 
     var body: some View {
-        let side = size * 0.9
+        // Whole points: a fractional side (13.5) rounds up on screen, and the
+        // row beside it came out a third of a point wider than the column,
+        // which let the whole chat scroll sideways.
+        let side = (size * 0.9).rounded()
         ZStack {
             RoundedRectangle(cornerRadius: side * 0.25, style: .continuous)
                 .fill(isChecked ? Color.ink : Color.clear)

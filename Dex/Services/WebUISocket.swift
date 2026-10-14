@@ -29,8 +29,22 @@ enum WebUIEvent: Equatable, Sendable {
     /// A reply started or stopped running in the chat.
     case active(chatID: String, isActive: Bool)
     case listChanged(chatID: String?)
+    /// The server changed a chat's messages on its own (a sub-agent's result
+    /// came in): read it again.
+    case reload(chatID: String, messageID: String)
     /// The connection dropped; connect again to hear more.
     case disconnected
+
+    /// The reply an event is about, for the kinds that are about one.
+    var messageID: String? {
+        switch self {
+        case .text(_, let id, _), .reasoning(_, let id, _, _), .item(_, let id, _, _), .finished(_, let id, _, _),
+             .failed(_, let id, _), .cancelled(_, let id):
+            id
+        case .read, .title, .tags, .active, .listChanged, .reload, .disconnected:
+            nil
+        }
+    }
 
     /// Decodes the body of an `events` message; nil for the kinds Dex ignores.
     static func decode(_ data: Data) -> WebUIEvent? {
@@ -71,6 +85,8 @@ enum WebUIEvent: Equatable, Sendable {
                 return .read(chatID: read.chatID ?? chatID, at: Date(timeIntervalSince1970: lastReadAt))
             }
             return .listChanged(chatID: envelope.chatID)
+        case "chat:reload":
+            return .reload(chatID: chatID, messageID: messageID)
         case "chat:tasks:cancel":
             return .cancelled(chatID: chatID, messageID: messageID)
         case "chat:message:error":

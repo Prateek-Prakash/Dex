@@ -41,7 +41,7 @@ struct FoldersView: View {
                 }
                 .tileRowInList()
             }
-            .listStyle(.plain)
+            .tileList()
             .scrollContentBackground(.hidden)
         }
         .folderActionAlerts(renaming: $folderToRename, deleting: $folderToDelete) { chatVM.delete($0) }

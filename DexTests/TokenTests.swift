@@ -19,7 +19,9 @@ struct TokenTests {
     private static let systemColor = #"(?<![\w.])(?:Color\.|\.)(?:red|orange|yellow|green|mint|teal|cyan|blue|indigo|purple|pink|brown|gray|black|white)\b(?!\()|Color\.(?:primary|secondary)\b|\.color\(\.(?:primary|secondary)\)"#
     private static let uiSystemColor = #"(?<![\w])(?:UIColor)?\.(?:system[A-Z]\w*|label|secondaryLabel|tertiaryLabel|quaternaryLabel)\b"#
     private static let colorLiteral = #"Color\((?:light|red|white|hue|uiColor|\.)"#
-    private static let rawSpacing = #"(?:\bspacing: |\.padding\((?:\.[a-zA-Z]+, )?|\b(?:top|leading|bottom|trailing): )(?!0\b)\d"#
+    /// A raw number as padding, stack spacing, an inset or a spacer's least
+    /// length; or a bare `.padding()`, the system's amount, not a token.
+    private static let rawSpacing = #"(?:\bspacing: |\.padding\((?:\.[a-zA-Z]+, )?|\b(?:top|leading|bottom|trailing): |Spacer\(minLength: )(?!0\b)\d|\.padding\(\)"#
     private static let rawRadius = #"cornerRadius: \d"#
 
     @Test func viewsUseTokensOnly() throws {
