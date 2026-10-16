@@ -23,6 +23,11 @@ struct StackResetTests {
         #expect(!check())
     }
 
+    @Test func aDeletedNoteGoesBackOnItsOwn() {
+        // Notes → a note, deleted: no reset to a new session (the note page leaves itself).
+        #expect(!check(page: .notes, routes: [.note("gone")]))
+    }
+
     @Test func aDeletedChatOrFolderAnywhereOnTheStackResets() {
         // Folders → Work → Q3 Plan, and the chat is deleted.
         #expect(check(page: .folders, routes: [.folder("work"), .chat("plan")], chats: []))

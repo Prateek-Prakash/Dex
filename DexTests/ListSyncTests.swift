@@ -98,6 +98,8 @@ extension StubbedNetworkTests {
         private static func vm() -> (ChatVM, FakeServer, ModelContext) {
             let context = ModelContext(Storage.inMemory())
             let server = FakeServer()
+            // Unsaved notes are kept across launches: none from an earlier test.
+            UserDefaults.standard.removeObject(forKey: ChatVM.pendingNotesKey)
             let vm = ChatVM()
             vm.context = context
             vm.server = server
@@ -264,6 +266,150 @@ extension StubbedNetworkTests {
             await vm.refreshList()
             #expect(chat.title == "New")
             #expect(server.state.listFetches == 2)
+        }
+
+        @Test func notesArriveAndChangesReachTheServer() async throws {
+            let (vm, server, context) = Self.vm()
+            server.state.setNotes(##"[{"id":"n7","title":"Trip","data":{"content":{"md":"# Trip\n\n- Pack"}},"is_pinned":false,"updated_at":1792029439764560369}]"##)
+            await vm.refreshList()
+            let note = try #require(try context.fetch(FetchDescriptor<Note>()).first)
+            #expect(note.title == "Trip")
+            #expect(note.preview == "Pack")
+
+            vm.rename(note, to: "  Trip Plans ")
+            #expect(note.title == "Trip Plans")
+            vm.togglePin(note)
+            #expect(note.isPinned)
+            // The rename's save goes out at once; a delete before then cancels it.
+            try await Task.sleep(for: .milliseconds(150))
+            vm.delete(note)
+            #expect(try context.fetch(FetchDescriptor<Note>()).isEmpty)
+            try await Task.sleep(for: .milliseconds(200))
+            let ops = server.state.noteOps
+            // Sent as one save of title and text.
+            #expect(ops.contains { $0.hasPrefix("update n7") && $0.contains(#""title":"Trip Plans""#) && $0.contains("# Trip") })
+            #expect(ops.contains("pin n7"))
+            #expect(ops.contains("delete n7"))
+        }
+
+        @Test func newNoteIsMadeOnTheServerFirst() async throws {
+            let (vm, server, context) = Self.vm()
+            let note = try #require(await vm.createNote())
+            #expect(note.id == "n1")
+            #expect(note.displayTitle == "New Note")
+            #expect(server.state.noteOps == ["create"])
+            #expect(try context.fetch(FetchDescriptor<Note>()).map(\.id) == ["n1"])
+            // Only a note made here is dropped if left blank.
+            #expect(vm.newNoteIDs == ["n1"])
+        }
+
+        @Test func aQuickPinAndUnpinEndUnpinned() async throws {
+            let (vm, server, context) = Self.vm()
+            let note = Note(id: "n5", title: "Quick")
+            context.insert(note)
+            vm.togglePin(note)
+            vm.togglePin(note)
+            #expect(!note.isPinned)
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(server.state.pinnedNotes.isEmpty)
+            vm.togglePin(note)
+            try await Task.sleep(for: .milliseconds(200))
+            #expect(server.state.pinnedNotes == ["n5"])
+        }
+
+        @Test func aNoteBeingEditedSurvivesARefresh() async throws {
+            let (vm, server, context) = Self.vm()
+            let note = Note(id: "n9", title: "Draft")
+            note.markdown = "Typed here"
+            context.insert(note)
+            vm.editingNoteIDs = ["n9"]
+            server.state.setNotes("[]")
+            await vm.refreshList()
+            #expect(note.markdown == "Typed here")
+            #expect(try context.fetch(FetchDescriptor<Note>()).count == 1)
+        }
+
+        @Test func typingSavesOnceItPausesWithTheFirstLineAsTitle() async throws {
+            let (vm, server, context) = Self.vm()
+            vm.noteSaveDelay = .milliseconds(50)
+            let note = try #require(await vm.createNote())
+            vm.edit(note, markdown: "# Groceries")
+            vm.edit(note, markdown: "# Groceries\n\n- Milk")
+            #expect(note.title == "Groceries")
+            #expect(vm.editingNoteIDs == ["n1"])
+            try await Task.sleep(for: .milliseconds(300))
+            // One save, after the pause, with the text as it ended.
+            let saves = server.state.noteOps.filter { $0.hasPrefix("update") }
+            #expect(saves == [##"update n1 {"data":{"content":{"html":null,"json":null,"md":"# Groceries\n\n- Milk"}},"title":"Groceries"}"##])
+            #expect(vm.editingNoteIDs.isEmpty)
+            _ = context
+        }
+
+        @Test func aRenamedNoteKeepsItsTitleAndDoneSavesAtOnce() async throws {
+            let (vm, server, _) = Self.vm()
+            vm.noteSaveDelay = .seconds(60)
+            let note = try #require(await vm.createNote())
+            vm.edit(note, markdown: "First line")
+            vm.rename(note, to: "My Title")
+            vm.edit(note, markdown: "Another first line")
+            #expect(note.title == "My Title")
+            vm.flush(note)
+            try await Task.sleep(for: .milliseconds(200))
+            // The rename's own update may land either side of it.
+            #expect(server.state.noteOps.contains { $0.contains(#""title":"My Title""#) && $0.contains("Another first line") })
+        }
+
+        @Test func openingANoteReadsItAgainUnlessItHasChangesHere() async throws {
+            let (vm, server, context) = Self.vm()
+            let note = Note(id: "n5", title: "Old")
+            context.insert(note)
+            server.state.setNote("n5", ##"{"id":"n5","title":"Edited On Web","data":{"content":{"md":"# New"}},"is_pinned":false,"updated_at":2}"##)
+            await vm.reload(note: "n5")
+            #expect(note.title == "Edited On Web")
+            #expect(note.markdown == "# New")
+            // Typed here and not saved yet: the server's copy waits.
+            vm.noteSaveDelay = .seconds(60)
+            vm.edit(note, markdown: "Mine")
+            await vm.reload(note: "n5")
+            #expect(note.markdown == "Mine")
+            // Gone from the server: gone here.
+            vm.editingNoteIDs = []
+            server.state.setNote("n5", nil)
+            await vm.reload(note: "n5")
+            #expect(try context.fetch(FetchDescriptor<Note>()).isEmpty)
+        }
+
+        @Test func aSaveCutShortIsSentOnTheNextLaunch() async throws {
+            let (vm, server, context) = Self.vm()
+            vm.noteSaveDelay = .seconds(60)
+            let note = Note(id: "n4", title: "")
+            context.insert(note)
+            vm.edit(note, markdown: "Typed before the app closed")
+            // The app is closed before the save goes out; the next launch:
+            let relaunched = ChatVM()
+            relaunched.context = context
+            relaunched.server = server
+            #expect(relaunched.editingNoteIDs == ["n4"])
+            server.state.setNotes("[]")
+            // The first refresh sends it, with nothing else asking.
+            await relaunched.refreshList()
+            #expect(note.markdown == "Typed before the app closed")
+            try await Task.sleep(for: .milliseconds(200))
+            #expect(server.state.noteOps.contains { $0.hasPrefix("update n4") && $0.contains("Typed before the app closed") })
+            #expect(relaunched.editingNoteIDs.isEmpty)
+            UserDefaults.standard.removeObject(forKey: ChatVM.pendingNotesKey)
+        }
+
+        @Test func aNoteDeletedElsewhereBeforeItsSaveGoesHereToo() async throws {
+            let (vm, server, context) = Self.vm()
+            let note = Note(id: "gone", title: "")
+            context.insert(note)
+            server.state.setMissingNote("gone")
+            vm.edit(note, markdown: "Typed")
+            vm.flush(note)
+            try await Task.sleep(for: .milliseconds(200))
+            #expect(try context.fetch(FetchDescriptor<Note>()).isEmpty)
+            #expect(vm.editingNoteIDs.isEmpty)
         }
 
         @Test func newFolderIsMadeOnTheServerFirst() async throws {

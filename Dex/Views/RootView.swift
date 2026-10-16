@@ -18,6 +18,7 @@ struct RootView: View {
         case folders
         /// One folder, by id.
         case folder(String)
+        case notes
     }
     
     /// Owned here so the connection survives switching pages; it owns the
@@ -107,6 +108,8 @@ struct RootView: View {
                         case .folder(let id):
                             FolderView(id: id, openDrawer: { setDrawer(open: true) },
                                        push: { push($0) }, leave: { resetToNewSession() })
+                        case .notes:
+                            NotesView(openDrawer: { setDrawer(open: true) }, push: { push($0) })
                         }
                     }
                     .navigationDestination(for: Route.self) { route in
@@ -119,6 +122,9 @@ struct RootView: View {
                         case .newChat(let folderID):
                             PushedNewChatView(folderID: folderID, push: { push($0) },
                                               leave: { resetToNewSession() })
+                        case .note(let id):
+                            // A note deleted, here or elsewhere, is simply gone back from.
+                            NoteView(id: id, leave: { leaveNote(id) })
                         }
                     }
                 }
@@ -174,6 +180,8 @@ struct RootView: View {
         // and chats may have changed.
         .onChange(of: scenePhase) {
             if scenePhase == .active { chatVM.resume() }
+            // Notes typed into save before the app goes away.
+            if scenePhase == .background { chatVM.flushNotes() }
         }
         // Something on the stack deleted elsewhere: start over.
         .onChange(of: chatVM.listVersion) {
@@ -337,6 +345,12 @@ struct RootView: View {
         page = .chat
     }
 
+    /// Goes back from a note page that was deleted, and from anything above it.
+    private func leaveNote(_ id: String) {
+        guard let index = routes.firstIndex(of: .note(id)) else { return }
+        routes.removeSubrange(index...)
+    }
+
     /// Whether any page shown or stacked was deleted: the drawer's folder
     /// page, a pushed chat or folder, or the chat held under them.
     private func stackHasDeletedPage() -> Bool {
@@ -356,6 +370,8 @@ struct RootView: View {
             switch route {
             case .folder(let id), .newChat(let id): !folderExists(id)
             case .chat(let id): !chatExists(id)
+            // A deleted note goes back on its own (`leaveNote`), not to a new session.
+            case .note: false
             }
         }
     }

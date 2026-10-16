@@ -60,12 +60,15 @@ struct PageScaffold<Content: View, Actions: View>: View {
                 .navigationTitle(title)
                 .toolbarTitleDisplayMode(.inline)
                 .safeAreaInset(edge: .bottom) {
-                    HStack {
-                        Spacer()
-                        PillButton(icon: .add, title: pillTitle, action: pillAction)
+                    // An empty title: a page without a pill (a note).
+                    if !pillTitle.isEmpty {
+                        HStack {
+                            Spacer()
+                            PillButton(icon: .add, title: pillTitle, action: pillAction)
+                        }
+                        .padding(.horizontal, Space.xl)
+                        .padding(.bottom, Space.m)
                     }
-                    .padding(.horizontal, Space.xl)
-                    .padding(.bottom, Space.m)
                 }
     }
 }

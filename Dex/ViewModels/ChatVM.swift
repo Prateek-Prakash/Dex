@@ -340,12 +340,206 @@ final class ChatVM: ObservableObject {
     /// dropped meanwhile are read from the server until they finish, and the
     /// chat on screen catches up with it.
     func resume() {
+        flushNotes()
         for session in ([current] + background).compactMap({ $0 }) where session.isReplying && !session.isLive {
             if session.task == nil { follow(session) }
         }
         if let current { sync(current) }
         listen()
         Task { await refreshList() }
+    }
+
+    // MARK: Notes
+
+    /// Notes with changes here the server hasn't taken: a refresh leaves
+    /// them be. Kept on the device, so a save cut short by the app being
+    /// closed is sent on the next launch, not overwritten by the server's
+    /// older copy.
+    var editingNoteIDs: Set<String> = Set(UserDefaults.standard.stringArray(forKey: ChatVM.pendingNotesKey) ?? []) {
+        didSet {
+            guard editingNoteIDs != oldValue else { return }
+            UserDefaults.standard.set(Array(editingNoteIDs), forKey: Self.pendingNotesKey)
+        }
+    }
+    nonisolated static let pendingNotesKey = "pendingNoteSaves"
+
+    /// How long typing pauses before a note is saved.
+    var noteSaveDelay: Duration = .seconds(1)
+    /// Each note's save waiting out `noteSaveDelay` or under way.
+    private var noteSaves: [String: Task<Void, Never>] = [:]
+
+    /// Takes in a note's text as typed; its title follows its first line
+    /// until it's renamed. Saved once typing pauses.
+    func edit(_ note: Note, markdown: String) {
+        guard markdown != note.markdown else { return }
+        let followsFirstLine = note.hasAutoTitle
+        note.markdown = markdown
+        if followsFirstLine { note.title = Note.autoTitle(markdown) }
+        editingNoteIDs.insert(note.id)
+        commit()
+        save(note, after: noteSaveDelay)
+    }
+
+    /// Saves a note's waiting changes now: Done, leaving it, the app going away.
+    func flush(_ note: Note) {
+        guard editingNoteIDs.contains(note.id) else { return }
+        save(note, after: .zero)
+    }
+
+    /// Saves every note with changes the server hasn't taken: when the app
+    /// goes away, and again on coming back for any that failed. `idleOnly`
+    /// (a refresh) sends only those with no save waiting or under way: one
+    /// left from the last launch, not typing still pausing.
+    func flushNotes(idleOnly: Bool = false) {
+        guard let context, !editingNoteIDs.isEmpty else { return }
+        for note in (try? context.fetch(FetchDescriptor<Note>())) ?? []
+        where editingNoteIDs.contains(note.id) && !(idleOnly && noteSaves[note.id] != nil) {
+            save(note, after: .zero)
+        }
+    }
+
+    /// Sends a note's title and text as they are when the wait is over. Its
+    /// newer typing meanwhile waits for its own save; a failed save stays
+    /// pending, kept from refreshes, until the next.
+    private func save(_ note: Note, after delay: Duration) {
+        let id = note.id
+        noteSaves[id]?.cancel()
+        guard let client = server?.client else { return }
+        noteSaves[id] = Task { [weak self] in
+            if delay > .zero { try? await Task.sleep(for: delay) }
+            guard !Task.isCancelled, let self, !note.isDeleted, note.modelContext != nil else { return }
+            let (title, markdown) = (note.title, note.markdown)
+            // A refresh waits for it, and one that read the list before it
+            // landed reads again rather than bring back the older text.
+            pendingWrites += 1
+            // Finishes even if the app is sent away meanwhile.
+            let background = UIApplication.shared.beginBackgroundTask(withName: "Save Note")
+            defer {
+                pendingWrites -= 1
+                localChanges += 1
+                UIApplication.shared.endBackgroundTask(background)
+            }
+            do {
+                let remote = try await client.update(note: id, title: title, markdown: markdown)
+                guard !Task.isCancelled, !note.isDeleted, note.modelContext != nil else { return }
+                note.updatedAt = remote.updatedAt
+                // Nothing typed since: the server has it all.
+                if note.title == title, note.markdown == markdown {
+                    editingNoteIDs.remove(id)
+                    noteSaves[id] = nil
+                }
+                commit()
+            } catch WebUIClient.Failure.notFound {
+                // Deleted elsewhere: nothing to save it into; gone here too.
+                guard !note.isDeleted, note.modelContext != nil else { return }
+                editingNoteIDs.remove(id)
+                noteSaves[id] = nil
+                context?.delete(note)
+                commit()
+            } catch {
+                print("Error Saving Note: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Reads a note again from the server when it's opened, unless it has
+    /// changes here the server hasn't taken.
+    func reload(note id: String) async {
+        guard let client = server?.client, let context, !editingNoteIDs.contains(id) else { return }
+        let changes = localChanges
+        do {
+            let remote = try await client.note(id: id)
+            // Renamed, pinned or typed into meanwhile: the server's copy is older.
+            guard changes == localChanges, !editingNoteIDs.contains(id),
+                  let note = try context.fetch(FetchDescriptor<Note>(predicate: #Predicate { $0.id == id })).first else { return }
+            CacheSync.store(remote, into: note)
+            commit()
+        } catch WebUIClient.Failure.notFound {
+            // Deleted elsewhere: gone here too, and its page leaves.
+            if let note = try? context.fetch(FetchDescriptor<Note>(predicate: #Predicate { $0.id == id })).first {
+                context.delete(note)
+                commit()
+            }
+        } catch {
+            print("Error Reading Note: \(error.localizedDescription)")
+        }
+    }
+
+    /// Notes made here (New Note) and not yet left: only these are deleted
+    /// when left untitled and empty, never a blank note from the web page.
+    var newNoteIDs: Set<String> = []
+
+    /// Makes an empty note on the server, then here with the server's id.
+    func createNote() async -> Note? {
+        guard let client = server?.client, let context else { return nil }
+        do {
+            let remote = try await client.createNote(title: "", markdown: "")
+            let note = Note(id: remote.id, title: remote.title)
+            context.insert(note)
+            CacheSync.store(remote, into: note)
+            newNoteIDs.insert(note.id)
+            localChanges += 1
+            commit()
+            return note
+        } catch {
+            print("Error Creating Note: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Renames a note. A blank name changes nothing. Sent like typing, as
+    /// one save of its title and text, so a save already under way can't
+    /// land after it and bring the old title back.
+    func rename(_ note: Note, to title: String) {
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, title != note.title else { return }
+        note.title = title
+        localChanges += 1
+        editingNoteIDs.insert(note.id)
+        commit()
+        save(note, after: .zero)
+    }
+
+    /// Pins a note, or unpins a pinned one.
+    func togglePin(_ note: Note) {
+        note.isPinned.toggle()
+        localChanges += 1
+        commit()
+        guard let client = server?.client else { return }
+        let id = note.id
+        let previous = pinSaves[id]
+        pendingWrites += 1
+        // One at a time per note, each sending the pin as it is by then, so
+        // a quick pin and unpin can't land crossed.
+        pinSaves[id] = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            defer {
+                pendingWrites -= 1
+                localChanges += 1
+            }
+            guard !note.isDeleted, note.modelContext != nil else { return }
+            let pinned = note.isPinned
+            do {
+                // The server only flips; flip again if it was already as asked.
+                if try await client.togglePin(note: id) != pinned { _ = try await client.togglePin(note: id) }
+            } catch {
+                print("Error Pinning Note: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Each note's pin change waiting or under way.
+    private var pinSaves: [String: Task<Void, Never>] = [:]
+
+    func delete(_ note: Note) {
+        let id = note.id
+        noteSaves.removeValue(forKey: id)?.cancel()
+        editingNoteIDs.remove(id)
+        context?.delete(note)
+        localChanges += 1
+        commit()
+        onServer { try await $0.delete(note: id) }
     }
 
     // MARK: Lists
@@ -419,8 +613,10 @@ final class ChatVM: ObservableObject {
         // A chat is saved only once the server has it, so only one still
         // replying here is kept if the list leaves it out.
         let keep = Set(([current] + background).compactMap { $0 }.filter(\.isReplying).compactMap { $0.chat?.id })
-        CacheSync.apply(snapshot, to: context, keep: keep)
+        CacheSync.apply(snapshot, to: context, keep: keep, keepNotes: editingNoteIDs)
         commit()
+        // Note saves cut short last launch go out with the first refresh.
+        flushNotes(idleOnly: true)
         // The chat on screen was deleted elsewhere: a new chat replaces it.
         if let chat = current?.chat, chat.isDeleted || chat.modelContext == nil { reset() }
         listVersion += 1

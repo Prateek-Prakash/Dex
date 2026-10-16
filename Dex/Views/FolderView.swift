@@ -72,6 +72,7 @@ struct FolderView: View {
             }
             .tileList()
             .scrollContentBackground(.hidden)
+            .emptyList(chats.isEmpty, icon: .chat, title: "No Chats Yet")
         } actions: {
             if let folder {
                 ItemActions(rename: { folderToRename = folder }, delete: { folderToDelete = folder })

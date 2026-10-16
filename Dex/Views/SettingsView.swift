@@ -50,7 +50,7 @@ struct SettingsView: View {
                     }
                     Section {
                         LabeledContent("Name", value: "Dex")
-                        LabeledContent("Version", value: "1.0.0+1")
+                        LabeledContent("Version", value: AppVersion.label)
                         LabeledContent("Bundle ID", value: "Teekzilla.Dex")
                         LabeledContent("Developer", value: "Teekzilla")
                     }

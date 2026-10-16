@@ -217,6 +217,36 @@ struct WebUILiveTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
+    func noteRoundTrip() async throws {
+        defer {
+            KeychainService.save("", for: tokenAccount)
+            KeychainService.save("", for: passwordAccount)
+        }
+        let client = WebUIClient(baseURL: Self.base, auth: try auth())
+        let title = "Dex Live Note \(UUID().uuidString.prefix(8))"
+        let note = try await client.createNote(title: title, markdown: "# Live\n\n- one")
+        do {
+            #expect(note.title == title)
+            #expect(note.markdown == "# Live\n\n- one")
+            let saved = try await client.update(note: note.id, title: title + " Renamed", markdown: "Changed")
+            #expect(saved.markdown == "Changed")
+            #expect(saved.updatedAt >= note.updatedAt)
+            #expect(try await client.togglePin(note: note.id))
+            let listed = try #require(try await client.notes().first { $0.id == note.id })
+            #expect(listed.title == title + " Renamed")
+            #expect(listed.isPinned)
+            // The list carries the text: a refresh would blank the cache otherwise.
+            #expect(listed.markdown == "Changed")
+            #expect(try await client.note(id: note.id).markdown == "Changed")
+        } catch {
+            try? await client.delete(note: note.id)
+            throw error
+        }
+        try await client.delete(note: note.id)
+        #expect(try await client.notes().contains { $0.id == note.id } == false)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
     func wrongPasswordSaysWhy() async throws {
         let email = try #require(Self.environment["DEX_LIVE_EMAIL"])
         KeychainService.save("definitely-not-the-password", for: passwordAccount)

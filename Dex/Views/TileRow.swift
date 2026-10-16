@@ -72,3 +72,33 @@ extension View {
             .listRowBackground(Color.clear)
     }
 }
+
+/// A list page with nothing in it: its icon and a heading, centered. The
+/// page's pill is the way to add the first one, so nothing more is said.
+struct EmptyListView: View {
+    let icon: Iconly
+    let title: String
+
+    var body: some View {
+        VStack(spacing: Space.l) {
+            // icon-size: a page's empty state, larger than any row or toolbar icon
+            IconlyIcon(icon, .custom(36.0))
+                .foregroundStyle(Color.textMuted)
+            Text(title)
+                .font(.headline)
+                .fontDesign(.rounded)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+extension View {
+    /// Shows `EmptyListView` over a list while it has nothing to show.
+    func emptyList(_ isEmpty: Bool, icon: Iconly, title: String) -> some View {
+        overlay {
+            if isEmpty { EmptyListView(icon: icon, title: title) }
+        }
+    }
+}
