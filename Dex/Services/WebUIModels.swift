@@ -46,6 +46,53 @@ struct WebUIFolder: Decodable, Sendable, Identifiable, Equatable {
     }
 }
 
+/// A note, from `/api/v1/notes/`: a title and Markdown. The web page edits
+/// notes as rich text and keeps a Markdown copy up to date; Dex reads and
+/// writes only that copy.
+struct WebUINote: Decodable, Sendable, Identifiable, Equatable {
+    let id: String
+    let title: String
+    let markdown: String
+    let isPinned: Bool
+    let createdAt: Date?
+    let updatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, data
+        case isPinned = "is_pinned"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+
+    private struct Data: Decodable {
+        struct Content: Decodable { let md: String? }
+        let content: Content?
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        markdown = ((try? container.decodeIfPresent(Data.self, forKey: .data)) ?? nil)?.content?.md ?? ""
+        isPinned = (try? container.decodeIfPresent(Bool.self, forKey: .isPinned)) ?? false
+        createdAt = (try? container.decodeIfPresent(Int.self, forKey: .createdAt)).flatMap { $0.map(Self.date) }
+        updatedAt = Self.date(try container.decodeIfPresent(Int.self, forKey: .updatedAt) ?? 0)
+    }
+
+    /// Notes are stamped in nanoseconds, unlike chats (seconds); either reads.
+    static func date(_ stamp: Int) -> Date {
+        let value = Double(stamp)
+        let seconds = value > 1e14 ? value / 1e9 : value > 1e11 ? value / 1e3 : value
+        return Date(timeIntervalSince1970: seconds)
+    }
+
+    /// A note's content as Dex saves it: the Markdown, with the web page's
+    /// own copies cleared, or the web page would go on showing those.
+    static func content(_ markdown: String) -> [String: [String: String?]] {
+        ["content": ["md": markdown, "html": nil, "json": nil]]
+    }
+}
+
 /// A saved chat with its whole message tree, from `/api/v1/chats/{id}`.
 struct WebUIChat: Decodable, Sendable, Identifiable {
     let id: String

@@ -87,6 +87,64 @@ final class Folder {
     }
 }
 
+/// A note, as the server has it: a title and Markdown.
+@Model
+final class Note {
+    /// The server's id.
+    @Attribute(.unique) var id: String
+    var title: String
+    var markdown: String = ""
+    var isPinned: Bool = false
+    var createdAt: Date = Date()
+    /// When it last changed on the server; sorts the Notes page.
+    var updatedAt: Date = Date()
+
+    init(id: String = Storage.newID(), title: String) {
+        self.id = id
+        self.title = title
+    }
+
+    /// The Notes page's order: newest change first.
+    static let newestFirst = [SortDescriptor(\Note.updatedAt, order: .reverse)]
+
+    /// Its row's second line: the first line of text that isn't the title,
+    /// without its heading, list or quote mark, bold or code ticks.
+    var preview: String {
+        Self.preview(markdown, title: title)
+    }
+
+    static func preview(_ markdown: String, title: String) -> String {
+        for text in plainLines(markdown) where text != title && ChatTitle.fallback(text) != title {
+            return text
+        }
+        return ""
+    }
+
+    /// The title a note takes from its first line until it's renamed.
+    static func autoTitle(_ markdown: String) -> String {
+        plainLines(markdown).first.map(ChatTitle.fallback) ?? ""
+    }
+
+    /// Its lines of text, without heading, list or quote marks, bold or code
+    /// ticks; empty lines and code fences left out.
+    private static func plainLines(_ markdown: String) -> [String] {
+        markdown.split(separator: "\n").compactMap { line in
+            var text = line.trimmingCharacters(in: .whitespaces)
+            if text.hasPrefix("```") { return nil }
+            text = text.replacingOccurrences(of: #"^(#{1,6}\s+|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+|>\s*)"#, with: "",
+                                             options: .regularExpression)
+            text = text.replacingOccurrences(of: #"\*\*|__|`"#, with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespaces)
+            return text.isEmpty ? nil : text
+        }
+    }
+
+    /// Its title still follows its first line: never renamed.
+    var hasAutoTitle: Bool {
+        title.isEmpty || title == Self.autoTitle(markdown)
+    }
+}
+
 /// A saved chat. Incognito chats never become one.
 @Model
 final class Chat {
@@ -230,7 +288,7 @@ extension ChatMessage {
 }
 
 enum Storage {
-    static let schema = Schema([Folder.self, Chat.self, Message.self])
+    static let schema = Schema([Folder.self, Chat.self, Message.self, Note.self])
 
     /// A new message, chat or folder id, in the server's form.
     static func newID() -> String {

@@ -43,6 +43,7 @@ struct FoldersView: View {
             }
             .tileList()
             .scrollContentBackground(.hidden)
+            .emptyList(folders.isEmpty, icon: .folder, title: "No Folders Yet")
         }
         .folderActionAlerts(renaming: $folderToRename, deleting: $folderToDelete) { chatVM.delete($0) }
         // A new folder opens straight away.

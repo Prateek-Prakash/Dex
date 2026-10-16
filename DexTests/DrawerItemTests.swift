@@ -37,6 +37,11 @@ struct RouteTests {
 
     @Test func newPagesPush() {
         #expect(Route.pushing(.folder(lab), onto: [], root: .folders, rootChatID: nil) == [.folder(lab)])
+        // A note pushes from Notes, and is gone back to if already open.
+        #expect(Route.pushing(.note("n1"), onto: [], root: .notes, rootChatID: nil) == [.note("n1")])
+        #expect(Route.pushing(.note("n1"), onto: [.note("n1")], root: .notes, rootChatID: nil) == [.note("n1")])
+        #expect(!Route.note("n1").isChat)
+        #expect(Route.note("n1").id == "n1")
         #expect(Route.pushing(.chat(notes), onto: [.folder(lab)], root: .folders, rootChatID: nil)
                 == [.folder(lab), .chat(notes)])
     }

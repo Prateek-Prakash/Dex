@@ -31,6 +31,12 @@ final class FakeServer: ReplyServer {
         private var _folderOps: [String] = []
         private var _listFetches = 0
         private var _missingChats: Set<String> = []
+        private var _notes = "[]"
+        private var _noteOps: [String] = []
+        private var nextNote = 0
+        private var _noteBodies: [String: String] = [:]
+        private var _missingNotes: Set<String> = []
+        private var _pinnedNotes: Set<String> = []
         /// The status a reply request gets; anything but 200 refuses it.
         var replyStatus = 200
         /// Runs on the main actor while a reply request is out, before it's
@@ -61,6 +67,16 @@ final class FakeServer: ReplyServer {
         /// Folder requests made, e.g. "create Lab", "update f1 {…}", "delete f1".
         var folderOps: [String] { locked { _folderOps } }
         var listFetches: Int { locked { _listFetches } }
+        /// The notes list, as a JSON array.
+        func setNotes(_ json: String) { locked { _notes = json } }
+        /// What `GET /api/v1/notes/{id}` answers; nil is "not found".
+        func setNote(_ id: String, _ json: String?) { locked { _noteBodies[id] = json } }
+        /// A note the server says it can't find when saved.
+        func setMissingNote(_ id: String) { locked { _ = _missingNotes.insert(id) } }
+        /// Note requests made, e.g. "create", "update n1 {…}", "pin n1", "delete n1".
+        var noteOps: [String] { locked { _noteOps } }
+        /// Notes pinned on the server; a pin request flips one.
+        var pinnedNotes: Set<String> { locked { _pinnedNotes } }
         /// Chats the server says it can't find when moved.
         func setMissing(_ ids: Set<String>) { locked { _missingChats = ids } }
 
@@ -91,6 +107,38 @@ final class FakeServer: ReplyServer {
                         return "c\(nextChat)"
                     }()
                     return .init(body: #"{"status":true,"task_ids":["t1"],"chat_id":"\#(chatID)"}"#)
+                case ("GET", "/api/v1/notes"), ("GET", "/api/v1/notes/"):
+                    return .init(body: request.url?.query == "page=1" ? _notes : "[]")
+                case ("POST", "/api/v1/notes/create"):
+                    nextNote += 1
+                    _noteOps.append("create")
+                    return .init(body: #"{"id":"n\#(nextNote)","title":"","data":{"content":{"md":""}},"is_pinned":false,"created_at":1792029000000000000,"updated_at":1792029000000000000}"#)
+                case (let method, let path) where path.hasPrefix("/api/v1/notes/"):
+                    let rest = path.dropFirst("/api/v1/notes/".count).split(separator: "/").map(String.init)
+                    let id = rest.first ?? ""
+                    switch (method, rest.last) {
+                    case ("GET", _):
+                        guard let note = _noteBodies[id] else {
+                            return .init(status: 401, body: #"{"detail":"We could not find what you're looking for :/"}"#)
+                        }
+                        return .init(body: note)
+                    case ("POST", "update") where _missingNotes.contains(id):
+                        return .init(status: 401, body: #"{"detail":"We could not find what you're looking for :/"}"#)
+                    case ("POST", "update"):
+                        let data = (try? JSONSerialization.data(withJSONObject: body, options: .sortedKeys)) ?? Data()
+                        _noteOps.append("update \(id) \(String(decoding: data, as: UTF8.self))")
+                    case ("POST", "pin"):
+                        _noteOps.append("pin \(id)")
+                        let pinned = _pinnedNotes.insert(id).inserted
+                        if !pinned { _pinnedNotes.remove(id) }
+                        return .init(body: #"{"id":"\#(id)","title":"","data":null,"is_pinned":\#(pinned),"updated_at":1}"#)
+                    case ("DELETE", _):
+                        _noteOps.append("delete \(id)")
+                        return .init(body: "true")
+                    default:
+                        break
+                    }
+                    return .init(body: #"{"id":"\#(id)","title":"","data":null,"is_pinned":false,"updated_at":1}"#)
                 case ("GET", let path) where path.hasPrefix("/api/tasks/chat/"):
                     let id = String(path.dropFirst("/api/tasks/chat/".count))
                     let tasks = (_tasks[id] ?? []).map { #""\#($0)""# }.joined(separator: ",")

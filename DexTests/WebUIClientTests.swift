@@ -233,6 +233,55 @@ extension StubbedNetworkTests {
             #expect(StubProtocol.requests.last?.httpMethod == "DELETE")
         }
 
+        @Test func notesReadEveryPageAndSendServerShapes() async throws {
+            let page = (1...60).map { #"{"id":"n\#($0)","title":"T","data":null,"is_pinned":false,"updated_at":1}"# }.joined(separator: ",")
+            let note = #"{"id":"n1","title":"T","data":{"content":{"md":"Hi"}},"is_pinned":true,"created_at":1,"updated_at":2}"#
+            let client = client { request in
+                if request.url?.path == "/api/v1/auths/signin" { return Self.signIn() }
+                switch (request.httpMethod ?? "", request.url?.path ?? "", request.url?.query) {
+                case ("GET", "/api/v1/notes", "page=1"): return .init(body: "[\(page)]")
+                case ("GET", "/api/v1/notes", "page=2"): return .init(body: #"[{"id":"last","title":"L","data":null,"updated_at":1}]"#)
+                case ("DELETE", _, _): return .init(body: "true")
+                default: return .init(body: note)
+                }
+            }
+            let all = try await client.notes()
+            #expect(all.count == 61)
+            #expect(all.last?.id == "last")
+            #expect(StubProtocol.requests.last?.url?.absoluteString == "https://webui.example.com/api/v1/notes/?page=2")
+
+            _ = try await client.createNote(title: "Trip", markdown: "# Trip")
+            let create = StubProtocol.requests.last!
+            #expect(create.url?.path == "/api/v1/notes/create")
+            let content = (Self.body(create)["data"] as? [String: Any])?["content"] as? [String: Any]
+            #expect(Self.body(create)["title"] as? String == "Trip")
+            #expect(content?["md"] as? String == "# Trip")
+            // The web page's own copies cleared, or it shows those.
+            #expect(content?["html"] is NSNull)
+            #expect(content?["json"] is NSNull)
+
+            try await client.update(note: "n1", title: "Renamed", markdown: nil)
+            let rename = StubProtocol.requests.last!
+            #expect(rename.url?.path == "/api/v1/notes/n1/update")
+            #expect(Self.body(rename)["title"] as? String == "Renamed")
+            #expect(Self.body(rename)["data"] == nil)
+
+            #expect(try await client.togglePin(note: "n1"))
+            #expect(StubProtocol.requests.last?.url?.path == "/api/v1/notes/n1/pin")
+            try await client.delete(note: "n1")
+            #expect(StubProtocol.requests.last?.url?.path == "/api/v1/notes/n1/delete")
+            #expect(StubProtocol.requests.last?.httpMethod == "DELETE")
+        }
+
+        @Test func notesStopWhenTheServerIgnoresPaging() async throws {
+            // Every page is the same 60 notes: read once, not forever.
+            let page = (1...60).map { #"{"id":"n\#($0)","title":"T","data":null,"is_pinned":false,"updated_at":1}"# }.joined(separator: ",")
+            let client = client { request in
+                request.url?.path == "/api/v1/auths/signin" ? Self.signIn() : .init(body: "[\(page)]")
+            }
+            #expect(try await client.notes().count == 60)
+        }
+
         @Test func startReplyReturnsChatID() async throws {
             let client = client { request in
                 request.url?.path == "/api/v1/auths/signin" ? Self.signIn()

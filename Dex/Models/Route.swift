@@ -14,18 +14,19 @@ enum Route: Hashable {
     case chat(String)
     /// A new chat in the folder with this id: a folder page's New Session.
     case newChat(String)
+    case note(String)
 
-    /// The folder's or chat's id.
+    /// The folder's, chat's or note's id.
     var id: String {
         switch self {
-        case .folder(let id), .chat(let id), .newChat(let id): id
+        case .folder(let id), .chat(let id), .newChat(let id), .note(let id): id
         }
     }
 
     /// A chat page, saved or new: it puts its own chat on screen.
     var isChat: Bool {
         switch self {
-        case .folder: false
+        case .folder, .note: false
         case .chat, .newChat: true
         }
     }

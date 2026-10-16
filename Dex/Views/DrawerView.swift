@@ -8,7 +8,7 @@
 import SwiftData
 import SwiftUI
 
-/// The drawer behind the main screen: Folders, then pinned chats, then
+/// The drawer behind the main screen: Folders and Notes, then pinned chats, then
 /// the rest, as the server has them.
 struct DrawerView: View {
     /// The main screen's uncovered width at the drawer's right; content
@@ -59,6 +59,9 @@ struct DrawerView: View {
             List {
                 row(.folder, "Folders", isSelected: page == .folders) {
                     select(.folders)
+                }
+                row(.note, "Notes", isSelected: page == .notes) {
+                    select(.notes)
                 }
                 ForEach(DrawerItem.sections(pinned: DrawerItem.pinned(chats),
                                             recent: DrawerItem.recent(chats)), id: \.title) { section in

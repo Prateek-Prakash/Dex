@@ -189,6 +189,61 @@ struct WebUIClient: Sendable {
         _ = try await send("api/v1/folders/\(id)", method: "DELETE")
     }
 
+    // MARK: Notes
+
+    /// Every note, every page of them (the server pages by 60). Stops at a
+    /// page with nothing new, so a server that ignores paging (and sends
+    /// them all each time) can't keep it asking.
+    func notes() async throws -> [WebUINote] {
+        var all: [WebUINote] = []
+        var seen = Set<String>()
+        for page in 1...500 {
+            let notes = try decode([WebUINote].self, from: await send("api/v1/notes/", query: [
+                URLQueryItem(name: "page", value: String(page)),
+            ]))
+            let new = notes.filter { seen.insert($0.id).inserted }
+            all += new
+            guard notes.count >= 60, !new.isEmpty else { break }
+        }
+        return all
+    }
+
+    func note(id: String) async throws -> WebUINote {
+        try decode(WebUINote.self, from: await send("api/v1/notes/\(id)"))
+    }
+
+    func createNote(title: String, markdown: String) async throws -> WebUINote {
+        try decode(WebUINote.self, from: await send("api/v1/notes/create", method: "POST", body: NoteBody(title: title, markdown: markdown)))
+    }
+
+    /// Renames a note and, given `markdown`, replaces its content. The server
+    /// wants the title every time.
+    @discardableResult
+    func update(note id: String, title: String, markdown: String?) async throws -> WebUINote {
+        try decode(WebUINote.self, from: await send("api/v1/notes/\(id)/update", method: "POST",
+                                                     body: NoteBody(title: title, markdown: markdown)))
+    }
+
+    /// Flips the pin; returns whether the note is pinned now.
+    func togglePin(note id: String) async throws -> Bool {
+        try decode(WebUINote.self, from: await send("api/v1/notes/\(id)/pin", method: "POST")).isPinned
+    }
+
+    func delete(note id: String) async throws {
+        _ = try await send("api/v1/notes/\(id)/delete", method: "DELETE")
+    }
+
+    private struct NoteBody: Encodable {
+        let title: String
+        let markdown: String?
+        enum CodingKeys: String, CodingKey { case title, data }
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(title, forKey: .title)
+            if let markdown { try container.encode(WebUINote.content(markdown), forKey: .data) }
+        }
+    }
+
     // MARK: Replies
 
     /// Starts a reply as a server job; it streams over the socket named by
