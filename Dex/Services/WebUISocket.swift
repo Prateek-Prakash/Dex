@@ -32,6 +32,8 @@ enum WebUIEvent: Equatable, Sendable {
     /// The server changed a chat's messages on its own (a sub-agent's result
     /// came in): read it again.
     case reload(chatID: String, messageID: String)
+    /// The server is summarizing the chat before a reply, or has finished.
+    case compacting(chatID: String, messageID: String, isDone: Bool)
     /// The connection dropped; connect again to hear more.
     case disconnected
 
@@ -39,7 +41,7 @@ enum WebUIEvent: Equatable, Sendable {
     var messageID: String? {
         switch self {
         case .text(_, let id, _), .reasoning(_, let id, _, _), .item(_, let id, _, _), .finished(_, let id, _, _),
-             .failed(_, let id, _), .cancelled(_, let id):
+             .failed(_, let id, _), .cancelled(_, let id), .compacting(_, let id, _):
             id
         case .read, .title, .tags, .active, .listChanged, .reload, .disconnected:
             nil
@@ -87,6 +89,10 @@ enum WebUIEvent: Equatable, Sendable {
             return .listChanged(chatID: envelope.chatID)
         case "chat:reload":
             return .reload(chatID: chatID, messageID: messageID)
+        case "context_compaction":
+            struct Status: Decodable { let done: Bool? }
+            let status = inner.data?.decode(Status.self)
+            return .compacting(chatID: chatID, messageID: messageID, isDone: status?.done ?? false)
         case "chat:tasks:cancel":
             return .cancelled(chatID: chatID, messageID: messageID)
         case "chat:message:error":

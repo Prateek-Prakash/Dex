@@ -30,6 +30,7 @@ enum CacheSync {
             childrenIds: remote.childrenIds
         )
         message.notice = remote.notice
+        message.contextSummary = remote.contextSummary
         guard role == .assistant else { return message }
         if let output = remote.output {
             ReplyParts(output: output, fallback: remote.content).apply(to: &message)
@@ -68,6 +69,9 @@ enum CacheSync {
                 records[message.id] = record
                 return record
             }()
+            // Seen here only: the server keeps no mark of which reply it compacted for.
+            var message = message
+            message.compactedBefore = message.compactedBefore || record.compactedBefore
             record.update(from: message)
         }
         chat.updatedAt = Date(timeIntervalSince1970: TimeInterval(remote.updatedAt))

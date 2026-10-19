@@ -20,6 +20,8 @@ import SwiftUI
 struct ChatTranscriptView: View {
     @EnvironmentObject var chatVM: ChatVM
     @Environment(\.showSubAgents) private var showSubAgents
+    /// The compaction summary whose sheet is up.
+    @State private var summaryShown: ContextSummarySelection?
 
     /// Keeps the end in view: set by the jump arrow only, cleared by the
     /// reader's own scroll up.
@@ -87,6 +89,12 @@ struct ChatTranscriptView: View {
                 ForEach(TranscriptLayout.turns(chatVM.messages), id: \.[0].id) { turn in
                     VStack(alignment: .leading, spacing: Space.xxxl) {
                         ForEach(turn) { message in
+                            // The model's memory starts here: the server summarized what's above.
+                            if message.contextSummary != nil {
+                                SummaryMarker {
+                                    summaryShown = ContextSummarySelection(at: message, in: chatVM.messages)
+                                }
+                            }
                             switch message.role {
                             case .user, .system:
                                 if let notice = message.notice {
@@ -219,6 +227,13 @@ struct ChatTranscriptView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: isNearBottom)
+        .sheet(item: $summaryShown) { selection in
+            ContextSummarySheet(selection: selection)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationContentInteraction(.scrolls)
+                .presentationBackground(Color.surfaceBase)
+        }
     }
 
     /// Pins a message to the top; its reply grows below, not followed. The
@@ -406,6 +421,8 @@ private struct ReplyView: View {
                 ChatMarkdownView(text: message.content)
                     .equatable()
                     .textSelection(.enabled)
+            } else if message.status == .streaming && message.isCompacting {
+                CompactingRow()
             } else if message.status == .streaming && message.thinking == nil {
                 WaitingDots()
             }

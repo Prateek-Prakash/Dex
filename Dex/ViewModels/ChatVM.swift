@@ -51,6 +51,10 @@ private final class ChatSession {
     var adopting: String?
     var adoptedParts = ReplyParts()
     var adoptedEnd: (status: ChatMessage.Status, error: String?, usage: WebUIUsage?)?
+    /// That reply is being compacted for, as last heard.
+    var adoptedCompacting = false
+    /// The server compacted the chat during the reply on its way.
+    var compacted = false
 
     init(isIncognito: Bool) {
         self.isIncognito = isIncognito
@@ -137,13 +141,27 @@ final class ChatVM: ObservableObject {
     /// The last finished reply's prompt plus output. A prompt carries the
     /// whole chat, so it can't be smaller than the reply before it; when the
     /// server reports less (it may count only what it didn't have cached),
-    /// the running total stands in, so the ring never shrinks as a chat grows.
+    /// the running total stands in, so the ring doesn't shrink as a chat
+    /// grows. Unless the server compacted the chat before that reply: then
+    /// its prompt is the summary and recent messages, and the count starts
+    /// over. Known when Dex saw it happen; otherwise taken, once per summary,
+    /// from the first prompt after it that fell by more than half. Later
+    /// drops are cached turns again.
     nonisolated static func contextUsed(_ messages: [ChatMessage]) -> Int? {
         var total: Int?
-        for message in messages.sorted(by: { $0.sequence < $1.sequence })
-        where message.role == .assistant && message.promptTokens != nil {
-            let prompt = max(message.promptTokens ?? 0, total ?? 0)
-            total = prompt + (message.outputTokens ?? 0)
+        /// A summary is on an earlier message and no drop has been taken for it yet.
+        var awaitsCompaction = false
+        for message in messages.sorted(by: { $0.sequence < $1.sequence }) {
+            if message.contextSummary != nil { awaitsCompaction = true }
+            guard message.role == .assistant, let prompt = message.promptTokens else { continue }
+            let output = message.outputTokens ?? 0
+            var restarts = message.compactedBefore
+            if !restarts, awaitsCompaction, Double(prompt) < Double(total ?? 0) / 2 {
+                restarts = true
+                awaitsCompaction = false
+            }
+            if message.compactedBefore { awaitsCompaction = false }
+            total = (restarts ? prompt : max(prompt, total ?? 0)) + output
         }
         return total
     }
@@ -891,6 +909,17 @@ final class ChatVM: ObservableObject {
             Task { await refreshList() }
         case .reload(let chatID, let messageID):
             reload(chatID, messageID: messageID)
+        case .compacting(_, let messageID, let isDone):
+            // Live or read from the server after the channel dropped: the
+            // reply on its way either way.
+            guard let session = sessions.first(where: { $0.replyID == messageID }) else { return }
+            update(messageID, in: session) {
+                $0.isCompacting = !isDone
+                $0.compactedBefore = true
+            }
+            // The summary is saved without touching the chat's time: read it
+            // once the reply ends.
+            if isDone { session.compacted = true }
         case .active(let chatID, let isActive):
             activity(chatID, isActive)
         case .cancelled(_, let messageID):
@@ -933,6 +962,7 @@ final class ChatVM: ObservableObject {
         for session in sessions where !session.isReplying {
             session.adopting = messageID
             session.adoptedParts = ReplyParts()
+            session.adoptedCompacting = false
             session.adoptedEnd = nil
             sync(session, isLive: true)
         }
@@ -956,6 +986,9 @@ final class ChatVM: ObservableObject {
             session.adoptedEnd = (.failed, message, nil)
         case .cancelled:
             session.adoptedEnd = (.stopped, nil, nil)
+        case .compacting(_, _, let isDone):
+            session.adoptedCompacting = !isDone
+            session.compacted = true
         default:
             break
         }
@@ -1106,6 +1139,12 @@ final class ChatVM: ObservableObject {
                     session.server = server
                     session.isLive = true
                     session.parts = session.adoptedParts
+                    if session.compacted {
+                        update(reply.id, in: session) {
+                            $0.compactedBefore = true
+                            $0.isCompacting = session.adoptedCompacting
+                        }
+                    }
                     if let end = session.adoptedEnd {
                         update(reply.id, in: session) {
                             Self.apply(session.parts, to: &$0)
@@ -1162,6 +1201,7 @@ final class ChatVM: ObservableObject {
             if let parts, parts.content.count >= $0.content.count { Self.apply(parts, to: &$0) }
             $0.status = status
             $0.error = error
+            $0.isCompacting = false
             // A lookup still running when the reply ended didn't finish.
             $0.lookups = $0.lookups?.map { lookup in
                 var lookup = lookup
@@ -1174,9 +1214,32 @@ final class ChatVM: ObservableObject {
             session.isLive = false
         }
         if let message = session.messages.first(where: { $0.id == id }) { save(message, in: session) }
+        if session.compacted {
+            session.compacted = false
+            fetchSummaries(session)
+        }
         background.removeAll { $0 === session }
         if session === current { markRead(session) }
         publish(session)
+    }
+
+    /// Takes in the summaries the server saved when it compacted the chat:
+    /// it marks them on the messages without touching anything else.
+    private func fetchSummaries(_ session: ChatSession) {
+        guard let server = session.server ?? server, let chatID = session.serverChatID, session.chat != nil else { return }
+        Task {
+            guard let remote = try? await server.client.chat(id: chatID) else { return }
+            let summaries = remote.chat.history.messages.values.reduce(into: [String: String]()) { found, message in
+                if let summary = message.contextSummary { found[message.id] = summary }
+            }
+            for index in session.messages.indices {
+                let summary = summaries[session.messages[index].id]
+                guard session.messages[index].contextSummary != summary else { continue }
+                session.messages[index].contextSummary = summary
+                save(session.messages[index], in: session)
+            }
+            publish(session)
+        }
     }
 
     /// A chat on screen is read, here and on the server.

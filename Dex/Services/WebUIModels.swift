@@ -155,6 +155,9 @@ struct WebUIMessage: Decodable, Sendable, Identifiable {
     let isStopped: Bool
     /// What the server added on its own: a sub-agent's result or a timer.
     let notice: AgentNotice?
+    /// Set on the first message kept when the server compacted the chat:
+    /// its summary of everything before. The model sees no further back.
+    let contextSummary: String?
 
     /// Dex's mark on a reply it stopped.
     static let stoppedKey = "dex_stopped"
@@ -162,7 +165,7 @@ struct WebUIMessage: Decodable, Sendable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, parentId, childrenIds, role, content, done, model, timestamp, usage, output, error
         case isStopped = "dex_stopped"
-        case meta
+        case meta, contextSummary
     }
 
     /// An internal message's marks.
@@ -191,6 +194,8 @@ struct WebUIMessage: Decodable, Sendable, Identifiable {
         usage = try container.decodeIfPresent(WebUIUsage.self, forKey: .usage)
         output = try container.decodeIfPresent([WebUIOutputItem].self, forKey: .output)
         isStopped = (try? container.decodeIfPresent(Bool.self, forKey: .isStopped)) ?? false
+        contextSummary = ((try? container.decodeIfPresent(String.self, forKey: .contextSummary)) ?? nil)
+            .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         if let meta = (try? container.decodeIfPresent(Meta.self, forKey: .meta)) ?? nil, meta.isInternal == true {
             let kind = AgentNotice.Kind(rawValue: meta.type ?? "") ?? .subagent
             notice = AgentNotice(kind: kind, results: kind == .subagent ? AgentNotice.results(in: content) : [])

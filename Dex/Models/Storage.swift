@@ -210,6 +210,10 @@ final class Message {
     var agents: String?
     var tasks: String?
     var notice: String?
+    /// `ChatMessage.contextSummary`.
+    var contextSummary: String?
+    /// `ChatMessage.compactedBefore`.
+    var compactedBefore: Bool = false
     var createdAt: Date = Date()
     var sequence: Int = 0
     var model: String?
@@ -246,6 +250,8 @@ final class Message {
         agents = Self.json(message.agents)
         tasks = Self.json(message.tasks)
         notice = Self.json(message.notice)
+        contextSummary = message.contextSummary
+        compactedBefore = message.compactedBefore
         createdAt = message.createdAt
         sequence = message.sequence
         model = message.model
@@ -270,6 +276,8 @@ extension ChatMessage {
             agents: Self.decode(stored.agents),
             tasks: Self.decode(stored.tasks),
             notice: Self.decode(stored.notice),
+            contextSummary: stored.contextSummary,
+            compactedBefore: stored.compactedBefore,
             createdAt: stored.createdAt,
             sequence: stored.sequence,
             model: stored.model,

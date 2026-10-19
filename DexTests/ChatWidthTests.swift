@@ -35,5 +35,6 @@ struct ChatWidthTests {
         let notice = AgentNotice(kind: .subagent, results: [.init(delegationID: "d", status: "completed", duration: 98, text: "x")])
         #expect(width(AgentsSection(agents: agents, startedAt: .now, model: "gemma4:12b")) <= Self.column)
         #expect(width(NoticeMarker(notice: notice) {}) <= Self.column)
+        #expect(width(SummaryMarker {}) <= Self.column)
     }
 }

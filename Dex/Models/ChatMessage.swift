@@ -32,6 +32,14 @@ struct ChatMessage: Identifiable, Equatable, Sendable {
     /// Set on a message the server added on its own (a sub-agent's result,
     /// a timer): shown as a marker, not as the user's bubble.
     var notice: AgentNotice?
+    /// The server's summary of every message before this one, once it
+    /// compacted the chat: the model's memory starts here.
+    var contextSummary: String?
+    /// The server is summarizing the chat before this reply; not stored.
+    var isCompacting = false
+    /// The server compacted the chat before this reply: its prompt is the
+    /// summary and the recent messages, so its count starts the ring over.
+    var compactedBefore = false
     var createdAt = Date()
     /// Order within the chat; breaks ties between equal timestamps.
     var sequence: Int
