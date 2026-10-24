@@ -69,17 +69,12 @@ struct ModelsView: View {
                         }
                     }
                 }
-                // Completed
-                ForEach(modelsVM.models) { model in
+                // Completed; a model being pulled again shows as its pull instead
+                ForEach(modelsVM.models.filter { !isPulling($0.id) }) { model in
                     NavigationLink {
                         ModelDetailsView(model: model)
                     } label: {
-                        LabeledContent {
-                            Text((model.size ?? 0).byteSize)
-                                .fontWeight(.bold)
-                                .fontDesign(.rounded)
-                                .foregroundStyle(.tertiary)
-                        } label: {
+                        HStack(spacing: Space.m) {
                             VStack(alignment: .leading) {
                                 Text(model.baseName.uppercased())
                                     .font(.system(size: 12.0, weight: .bold, design: .rounded))
@@ -90,6 +85,20 @@ struct ModelsView: View {
                                     .font(.system(size: 9.0, weight: .thin, design: .monospaced))
                                     .foregroundStyle(.secondary)
                             }
+                            Spacer(minLength: 0)
+                            if modelsVM.updatable.contains(model.id) {
+                                UpdateTag()
+                            }
+                        }
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        if modelsVM.updatable.contains(model.id) {
+                            Button("Update") {
+                                Task {
+                                    await modelsVM.pullModel(model.id)
+                                }
+                            }
+                            .tint(Color.accent)
                         }
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -104,6 +113,10 @@ struct ModelsView: View {
         }
         .settingsList()
         .listStyle(.plain)
+        // Again whenever the list reloads: it may still be loading on open.
+        .task(id: modelsVM.models) {
+            await modelsVM.checkForUpdates()
+        }
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text("Models")
@@ -149,6 +162,23 @@ struct ModelsView: View {
             Text("\(model.baseName.uppercased())\n\(model.tag.uppercased())\n\(model.shortDigest.uppercased())\n\((model.size ?? 0).byteSize)")
         }
         .tint(Color.ink)
+    }
+
+    private func isPulling(_ name: String) -> Bool {
+        modelsVM.currentPulls[name].map { !$0.contains("FAILED") } ?? false
+    }
+}
+
+/// Marks a model whose library build is newer than the server's.
+private struct UpdateTag: View {
+    var body: some View {
+        Text("UPDATE")
+            .font(.system(size: 9.0, weight: .bold, design: .rounded))
+            .tracking(0.4)
+            .foregroundStyle(Color.accentText)
+            .padding(.horizontal, Space.m)
+            .padding(.vertical, Space.xs)
+            .background(Color.accent.opacity(0.12), in: Capsule())
     }
 }
 

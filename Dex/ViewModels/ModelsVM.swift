@@ -16,6 +16,11 @@ final class ModelsVM: ObservableObject {
     @AppStorage("currentPulls") var currentPulls: [String:String] = [:]
 
     @Published private(set) var models: [WebUIModel] = []
+    /// Models whose library build differs from the server's, by name.
+    @Published private(set) var updatable: Set<String> = []
+
+    /// Where `checkForUpdates` asks.
+    var registry = ModelRegistry()
 
     /// The picked model, when the server has it. The choice itself persists
     /// in `selectedModel` and is cleared only once a model list without it loads.
@@ -67,6 +72,27 @@ final class ModelsVM: ObservableObject {
         }
     }
 
+    /// Asks the library about every model at once. A model it can't answer
+    /// for keeps no tag; nothing is shown for a failed check.
+    func checkForUpdates() async {
+        let registry = registry
+        let checks = models.map { ($0.id, $0.digest) }
+        let found = await withTaskGroup(of: (String, Bool?).self) { group in
+            for (name, digest) in checks {
+                group.addTask { (name, await registry.hasUpdate(model: name, digest: digest)) }
+            }
+            var found: Set<String> = []
+            for await (name, hasUpdate) in group where hasUpdate == true {
+                found.insert(name)
+            }
+            return found
+        }
+        // A cancelled check's lookups came back empty; the next one decides.
+        guard !Task.isCancelled else { return }
+        // Models deleted while the check ran keep no tag.
+        updatable = found.intersection(models.map(\.id))
+    }
+
     func deleteModel(named name: String) {
         guard let client else { return }
         models.removeAll { $0.id == name }
@@ -96,6 +122,7 @@ final class ModelsVM: ObservableObject {
                 }
                 guard !Task.isCancelled else { return }
                 currentPulls.removeValue(forKey: name)
+                updatable.remove(name)
             } catch {
                 // Cancelled by a server switch: leave the entry for the new server.
                 guard !Task.isCancelled else { return }
